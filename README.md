@@ -152,6 +152,9 @@ OPTIONS:
     --no-hooks        Skip pre/post hook commands
     --bare            Create a bare worktree (no branch checkout)
     --dry-run         Print what would happen without executing anything
+    --copy-from <b>   Copy node_modules from an existing worktree instead
+                      of fresh install (uses clonefile on macOS)
+    --exec, -x <cmd>  Run a command inside the new worktree after setup
 ```
 
 **Examples**
@@ -172,6 +175,15 @@ wt add release/v2 --existing
 
 # Quick worktree for a code review — skip the slow install step
 wt add fix-typo --no-deps
+
+# Copy deps from main worktree instead of reinstalling (instant on macOS)
+wt add feat-billing --copy-from main
+
+# Create worktree and open VS Code in it
+wt add feat-billing --exec "code ."
+
+# Create worktree and launch Claude Code
+wt add feat-billing -x claude
 
 # Preview without making changes
 wt add feat-billing --dry-run
@@ -395,6 +407,36 @@ Output format:
 ```
 
 **Exit codes**: `0` all passed, `1` one or more failures, `2` warnings only.
+
+---
+
+### `wt shell-init [shell]`
+
+Print a shell function that makes `wt cd` actually change your working directory.
+
+```
+wt shell-init [zsh|bash|fish]
+```
+
+**Setup (one-time)**
+
+```bash
+# Zsh — add to ~/.zshrc
+eval "$(wt shell-init zsh)"
+
+# Bash — add to ~/.bashrc
+eval "$(wt shell-init bash)"
+
+# Fish — add to ~/.config/fish/config.fish
+wt shell-init fish | source
+```
+
+After sourcing, these work as real `cd`:
+
+```bash
+wt cd feat-billing      # actually changes directory
+wtcd feat               # shorthand, same thing
+```
 
 ---
 
