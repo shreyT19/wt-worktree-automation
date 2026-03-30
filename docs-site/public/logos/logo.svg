@@ -1,0 +1,6 @@
+<svg width="120" height="120" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="120" height="120" rx="24" fill="#18181B"/>
+  <text x="12" y="72" font-family="JetBrains Mono, monospace" font-size="56" font-weight="700" fill="#A1A1AA">&gt;</text>
+  <text x="42" y="68" font-family="JetBrains Mono, monospace" font-size="48" font-weight="800" fill="#FFFFFF">wt</text>
+  <rect x="102" y="32" width="3" height="44" rx="1" fill="#22D3EE"/>
+</svg>
