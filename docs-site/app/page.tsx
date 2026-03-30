@@ -16,13 +16,12 @@ function Navbar() {
       <div className="mx-auto max-w-6xl px-6 h-14 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-2">
           <Image
-            src="/logos/icon-gradient.png"
+            src="/logos/icon-dark.png"
             alt="wt logo"
-            width={28}
-            height={28}
-            className="rounded-md"
+            width={32}
+            height={32}
+            className="rounded-lg"
           />
-          <span className="font-mono font-bold text-white text-lg tracking-tight">wt</span>
         </Link>
         <div className="flex items-center gap-6">
           <Link href="/docs" className="text-sm text-zinc-400 hover:text-white transition-colors">
@@ -55,19 +54,17 @@ function HeroSection() {
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_-10%,rgba(120,119,198,0.15),transparent)]" />
 
       <div className="relative z-10 max-w-4xl mx-auto text-center">
-        {/* Logo + Badge */}
-        <div className="animate-fade-in flex flex-col items-center gap-5 mb-8">
-          <Image
-            src="/logos/icon-gradient.png"
-            alt="wt logo"
-            width={72}
-            height={72}
-            className="rounded-2xl"
-          />
-          <div className="inline-flex items-center gap-2 border border-white/10 rounded-full px-3 py-1 text-xs text-zinc-400">
+        {/* Badge */}
+        <div className="animate-fade-in mb-8">
+          <a
+            href={`${GITHUB_URL}/blob/main/LICENSE`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 border border-white/10 rounded-full px-3 py-1.5 text-xs text-zinc-400 hover:border-white/20 transition-colors"
+          >
             <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
             Open source — MIT License
-          </div>
+          </a>
         </div>
 
         {/* Headline */}
@@ -411,8 +408,7 @@ function Footer() {
     <footer className="bg-zinc-950 border-t border-white/10 py-12 px-6">
       <div className="mx-auto max-w-5xl flex flex-col md:flex-row items-center justify-between gap-6">
         <div className="flex items-center gap-3">
-          <Image src="/logos/icon-gradient.png" alt="wt" width={24} height={24} className="rounded-md" />
-          <span className="font-mono font-bold text-white">wt</span>
+          <Image src="/logos/icon-dark.png" alt="wt" width={28} height={28} className="rounded-lg" />
           <span className="text-zinc-600 text-sm">MIT License</span>
         </div>
         <div className="flex items-center gap-8 text-sm text-zinc-500">

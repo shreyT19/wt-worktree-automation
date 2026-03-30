@@ -9,16 +9,13 @@ export default function Layout({ children }: { children: ReactNode }) {
       tree={source.pageTree}
       nav={{
         title: (
-          <div className="flex items-center gap-2">
-            <Image
-              src="/logos/icon-gradient.png"
-              alt="wt"
-              width={28}
-              height={28}
-              className="rounded-md"
-            />
-            <span className="font-mono font-bold text-lg">wt</span>
-          </div>
+          <Image
+            src="/logos/icon-dark.png"
+            alt="wt"
+            width={32}
+            height={32}
+            className="rounded-lg"
+          />
         ),
         url: "/",
       }}
