@@ -10,6 +10,17 @@ export const metadata: Metadata = {
   },
   description:
     "Instantly create fully configured git worktrees with dependencies installed and .env files in place.",
+  icons: {
+    icon: "/favicon.png",
+    apple: "/logos/favicon-64.png",
+  },
+  openGraph: {
+    title: "wt — worktree automation",
+    description:
+      "Instantly create fully configured git worktrees with dependencies installed and .env files in place.",
+    siteName: "wt",
+    type: "website",
+  },
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
