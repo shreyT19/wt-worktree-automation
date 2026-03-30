@@ -1,0 +1,213 @@
+# .worktreerc — Worktree automation configuration
+#
+# Rename this file to `.worktreerc` and place it in your repository root.
+# This file is SAFE TO COMMIT — it contains no secrets, only strategies
+# and commands. Keep it alongside your other tooling config files.
+#
+# Schema version — bump only when breaking changes are introduced.
+version = 1
+
+# =============================================================================
+# [detect] — Override automatic project type detection
+#
+# By default wt scans the repository for well-known marker files
+# (package.json, pyproject.toml, Cargo.toml, go.mod) to determine which
+# ecosystems are present. Use this section to hard-code that list and skip
+# the scan — useful in monorepos where the scan might be ambiguous.
+#
+# Valid values: "node", "python", "rust", "go", "mixed"
+# =============================================================================
+[detect]
+
+# Explicitly declare which project types exist in this repo.
+# If this key is absent, wt performs automatic detection.
+#
+# types = ["node", "python"]
+
+
+# =============================================================================
+# [deps] — Dependency installation configuration
+# =============================================================================
+[deps]
+
+# Set to false to skip dependency installation entirely.
+# Equivalent to passing --no-deps on the CLI.
+# Default: true
+enabled = true
+
+# Override the package manager for Node.js projects.
+# Options: "bun" | "npm" | "pnpm" | "yarn"
+# If absent, wt auto-detects from lockfiles (bun.lockb, pnpm-lock.yaml, etc.)
+#
+# node_pm = "bun"
+
+# Override the package manager for Python projects.
+# Options: "uv" | "pip" | "poetry" | "pipenv"
+# If absent, wt auto-detects from lockfiles and pyproject.toml markers.
+#
+# python_pm = "uv"
+
+# ---------------------------------------------------------------------------
+# Custom install commands — use this section for monorepos or unusual setups.
+# When [deps.custom] commands are present, they REPLACE all auto-detection.
+# Each command is run from the worktree root in the order listed.
+# ---------------------------------------------------------------------------
+# [deps.custom]
+# commands = [
+#     "bun install --frozen-lockfile",
+#     "cd services/api && uv venv .venv && uv pip install -e '.[dev]'",
+# ]
+
+
+# =============================================================================
+# [env] — Environment file handling
+#
+# wt manages .env* files between your main worktree and new worktrees.
+# It never stores or transmits secret values — it only creates symlinks or
+# copies, pointing at files that already exist in your main worktree.
+# =============================================================================
+[env]
+
+# How to handle .env files:
+#   "symlink"  All worktrees share the same .env files via symlinks.
+#              Changes in one worktree are visible in all others immediately.
+#              Recommended for teams that share a single .env.
+#   "copy"     Each worktree gets its own independent copy.
+#              Use when worktrees need divergent configuration (e.g., different ports).
+#   "skip"     Do not touch .env files at all.
+# Default: "symlink"
+strategy = "symlink"
+
+# Glob patterns (relative to repo root) that wt should process.
+# Supports shell globs: * matches within a directory level, ** is not supported.
+# Default: [".env", ".env.local", ".env.development"]
+patterns = [
+    ".env",
+    ".env.local",
+    ".env.development",
+    # For monorepos with per-service env files:
+    # "services/*/.env",
+    # "services/*/.env.local",
+]
+
+# Files that must always be COPIED, regardless of the strategy above.
+# Use this for files that contain worktree-specific values (port numbers,
+# database names, etc.) that will diverge between worktrees.
+#
+# always_copy = [
+#     ".env.test",
+# ]
+
+# Files to explicitly exclude from env handling.
+# Critical: always exclude production and staging credentials.
+exclude = [
+    ".env.production",
+    ".env.staging",
+]
+
+
+# =============================================================================
+# [files] — Additional paths to symlink or copy into new worktrees
+#
+# Use this section for large assets, shared caches, or config files that
+# should be identical (or derived) across all worktrees.
+# =============================================================================
+[files]
+
+# Symlink these paths from the main worktree root into the new worktree.
+# Useful for large directories that are expensive to recreate
+# (e.g., cached build outputs, shared binary assets).
+#
+# symlink = [
+#     "node_modules/.cache",
+#     ".pytest_cache",
+#     ".mypy_cache",
+# ]
+
+# Copy these paths into the new worktree.
+# Useful for editor/IDE config that you want to start from your current
+# settings but allow to diverge.
+#
+# copy = [
+#     ".vscode/settings.json",
+#     ".vscode/launch.json",
+# ]
+
+
+# =============================================================================
+# [python] — Python-specific configuration
+# =============================================================================
+[python]
+
+# Python executable to use when creating the virtualenv.
+# Default: "python3"
+# version = "python3.11"
+
+# Path to the requirements file (relative to worktree root).
+# Default: auto-detect (requirements.txt, requirements/base.txt, etc.)
+# requirements = "requirements/dev.txt"
+
+# Install the package in editable mode (-e) after creating the venv.
+# Set to true for packages you are actively developing.
+# Default: false
+# editable = true
+
+
+# =============================================================================
+# [hooks] — Custom commands to run during setup
+#
+# SECURITY NOTE: These commands run with the same permissions as the
+# developer running `wt`. Review any .worktreerc from an untrusted source
+# before running setup. wt will show hook commands and prompt for
+# confirmation when a .worktreerc is encountered for the first time.
+# =============================================================================
+[hooks]
+
+# Commands to run BEFORE dependency installation.
+# Useful for generating source files that the installer needs.
+#
+# pre_install = [
+#     "echo 'Preparing worktree...'",
+#     "cp .env.example .env",
+# ]
+
+# Commands to run AFTER dependency installation succeeds.
+# Typical uses: database migration checks, code generation, compilation.
+#
+# post_install = [
+#     "bun run codegen",
+#     "python manage.py migrate --check",
+# ]
+
+# Commands to run AFTER the entire setup is complete.
+# Useful for final validation or developer-facing status messages.
+#
+# post_setup = [
+#     "echo 'Worktree is ready. Run: bun dev'",
+# ]
+
+
+# =============================================================================
+# [worktree] — Worktree path configuration
+# =============================================================================
+[worktree]
+
+# Base directory where new worktrees are created.
+# Supports ~ expansion and $VARIABLE substitution.
+# Default: parent directory of the main repo (i.e., sibling directories).
+#
+# Examples:
+#   "../worktrees"            → ../worktrees/feat-billing
+#   "~/dev/worktrees"         → ~/dev/worktrees/feat-billing
+#   "$WT_BASE"                → $WT_BASE/feat-billing
+#
+# base_dir = "../worktrees"
+
+# Naming pattern for the worktree directory.
+# Available variables:
+#   {repo}         repository directory name (e.g., "myapp")
+#   {branch}       full branch name (e.g., "shreyansh/feat-billing")
+#   {short_branch} branch name after the last / (e.g., "feat-billing")
+# Default: "{repo}-{short_branch}"
+#
+# name_pattern = "{repo}-{short_branch}"

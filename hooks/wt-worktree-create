@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# Claude Code WorktreeCreate hook for wt automation
+#
+# This hook is triggered by Claude Code when:
+#   - `claude --worktree` is run
+#   - A subagent uses `isolation: "worktree"`
+#
+# It REPLACES the default `git worktree add` behavior and MUST print
+# the absolute path of the created worktree to stdout.
+#
+# Input (JSON on stdin):
+#   { "name": "<worktree-name>" }
+#
+# Install: add to ~/.claude/settings.json
+#
+# {
+#   "hooks": {
+#     "WorktreeCreate": [{
+#       "hooks": [{
+#         "type": "command",
+#         "command": "/path/to/wt-worktree-create"
+#       }]
+#     }]
+#   }
+# }
+
+set -eo pipefail
+
+# Read the worktree name from stdin JSON
+INPUT=$(cat)
+NAME=$(echo "$INPUT" | bun -e '
+  const input = await Bun.stdin.text();
+  try {
+    const data = JSON.parse(process.env.WT_INPUT || "{}");
+    process.stdout.write(data.name || "worktree");
+  } catch { process.stdout.write("worktree"); }
+' 2>/dev/null || echo "worktree")
+
+# Use WT_INPUT env var for bun parsing (avoid stdin conflicts)
+export WT_INPUT="$INPUT"
+NAME=$(bun -e '
+  try {
+    const data = JSON.parse(process.env.WT_INPUT || "{}");
+    process.stdout.write(data.name || "worktree");
+  } catch { process.stdout.write("worktree"); }
+')
+
+# Resolve paths
+REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+REPO_NAME=$(basename "$REPO_ROOT")
+
+# Generate a worktree path
+WT_DIR="${REPO_ROOT}/../worktrees/${REPO_NAME}"
+mkdir -p "$WT_DIR"
+WT_PATH="${WT_DIR}/${NAME}"
+
+# Create the worktree
+BRANCH_NAME="${NAME}"
+if git show-ref --verify --quiet "refs/heads/${BRANCH_NAME}" 2>/dev/null; then
+  # Branch exists — check it out
+  git worktree add "$WT_PATH" "$BRANCH_NAME" 2>&1 >&2
+else
+  # Create new branch from current HEAD
+  git worktree add -b "$BRANCH_NAME" "$WT_PATH" 2>&1 >&2
+fi
+
+# Run wt setup if available
+if command -v wt >/dev/null 2>&1; then
+  wt setup "$WT_PATH" --quiet 2>&1 >&2
+fi
+
+# REQUIRED: print the absolute worktree path to stdout
+echo "$WT_PATH"

@@ -1,0 +1,48 @@
+#!/bin/sh
+# Git post-checkout hook for wt automation
+#
+# Git calls this hook with three arguments:
+#   $1 = previous HEAD (SHA or 0000...0000 for new worktrees)
+#   $2 = new HEAD
+#   $3 = branch flag (1 = branch checkout, 0 = file checkout)
+#
+# This hook detects fresh worktree creation and triggers `wt setup`
+# automatically so dependencies and .env files are ready immediately.
+#
+# Install: copy or symlink this file to .git/hooks/post-checkout
+# and ensure it is executable: chmod +x .git/hooks/post-checkout
+
+PREV_HEAD="$1"
+# NEW_HEAD="$2"  # unused — kept here for documentation
+BRANCH_FLAG="$3"
+
+NULL_SHA="0000000000000000000000000000000000000000"
+
+# Only act on branch checkouts, not individual file restores.
+if [ "$BRANCH_FLAG" != "1" ]; then
+    exit 0
+fi
+
+# A null previous HEAD means git is populating a brand-new worktree.
+# Regular branch switches always have a valid previous SHA.
+if [ "$PREV_HEAD" != "$NULL_SHA" ]; then
+    exit 0
+fi
+
+# ---- We are inside a newly-created worktree. Run wt setup. ----
+
+# Check that wt is on PATH before trying to invoke it.
+if ! command -v wt >/dev/null 2>&1; then
+    printf '\n[wt] post-checkout hook: wt is not installed or not on PATH.\n'
+    printf '[wt] Install wt and re-run setup manually: wt setup "%s"\n' "$PWD"
+    printf '[wt] See: https://github.com/your-org/modules-link\n\n'
+    # Exit 0 — a missing `wt` binary should never block a git checkout.
+    exit 0
+fi
+
+printf '\n[wt] New worktree detected at %s\n' "$PWD"
+printf '[wt] Running wt setup ...\n\n'
+
+# Run setup in the worktree directory.
+# Use exec so the hook's exit code mirrors wt's exit code directly.
+exec wt setup "$PWD"

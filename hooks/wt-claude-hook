@@ -1,0 +1,255 @@
+#!/usr/bin/env bash
+# Claude Code PostToolUse hook for wt automation
+#
+# Claude Code calls this script after every Bash tool invocation (and
+# optionally after EnterWorktree) by setting:
+#
+#   CLAUDE_TOOL_INPUT  – JSON object describing the tool input
+#   CLAUDE_TOOL_OUTPUT – JSON object describing the tool result
+#
+# When the executed command is `git worktree add ...` this hook extracts
+# the destination path and runs `wt setup <path> --quiet` so the new
+# worktree is fully configured before Claude continues.
+#
+# When invoked with --mode=enter (EnterWorktree tool) the hook reads the
+# worktree path from CLAUDE_TOOL_INPUT and runs setup only if it has not
+# been completed before (idempotent via .wt-setup-done marker).
+#
+# Install: add the following to ~/.claude/settings.json
+#
+# {
+#   "hooks": {
+#     "PostToolUse": [
+#       {
+#         "matcher": "Bash",
+#         "hooks": [{ "type": "command", "command": "/path/to/wt-claude-hook" }]
+#       },
+#       {
+#         "matcher": "EnterWorktree",
+#         "hooks": [{ "type": "command", "command": "/path/to/wt-claude-hook --mode=enter" }]
+#       }
+#     ]
+#   }
+# }
+
+set -eo pipefail
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+log() {
+    # Everything we print goes to stdout so Claude sees it as hook output.
+    printf '%s\n' "$*"
+}
+
+die() {
+    log "[wt-claude-hook] ERROR: $*"
+    exit 1
+}
+
+# Require bun for JSON parsing — bun is already a project dependency.
+require_bun() {
+    if ! command -v bun >/dev/null 2>&1; then
+        die "bun is required for JSON parsing but was not found on PATH."
+    fi
+}
+
+require_wt() {
+    if ! command -v wt >/dev/null 2>&1; then
+        log "[wt-claude-hook] wt is not installed or not on PATH — skipping setup."
+        log "[wt-claude-hook] Install wt to enable automatic worktree setup."
+        exit 0
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# JSON parsing via bun inline script
+# ---------------------------------------------------------------------------
+
+# Extract a string field from a JSON blob using bun.
+# Usage: json_get '<json>' '<key_path>'
+# key_path uses dot-notation, e.g. "command" or "path"
+# The key is passed via WT_KEY env var to avoid shell interpolation issues.
+json_get() {
+    local json="$1"
+    local key="$2"
+    bun -e "
+const obj = JSON.parse(process.env.WT_JSON || '{}');
+const keys = (process.env.WT_KEY || '').split('.');
+let val = obj;
+for (const k of keys) { val = val?.[k]; }
+process.stdout.write(val ?? '');
+" WT_JSON="$json" WT_KEY="$key"
+}
+
+# ---------------------------------------------------------------------------
+# Mode: EnterWorktree
+# ---------------------------------------------------------------------------
+
+handle_enter_worktree() {
+    require_bun
+    require_wt
+
+    # Guard: skip if input is missing or too large (>1MB)
+    if [ -z "${CLAUDE_TOOL_INPUT:-}" ]; then
+        log "[wt-claude-hook] CLAUDE_TOOL_INPUT is empty — nothing to do."
+        exit 0
+    fi
+    local input_size=${#CLAUDE_TOOL_INPUT}
+    if [ "$input_size" -gt 1048576 ]; then
+        log "[wt-claude-hook] CLAUDE_TOOL_INPUT too large (${input_size} bytes) — skipping."
+        exit 0
+    fi
+
+    # EnterWorktree tool input has a "path" field.
+    local worktree_path
+    worktree_path=$(json_get "$CLAUDE_TOOL_INPUT" "path")
+
+    if [ -z "$worktree_path" ]; then
+        log "[wt-claude-hook] Could not extract worktree path from CLAUDE_TOOL_INPUT."
+        exit 0
+    fi
+
+    # Resolve to absolute path.
+    worktree_path=$(cd "$worktree_path" 2>/dev/null && pwd || echo "$worktree_path")
+
+    local marker_file="${worktree_path}/.wt-setup-done"
+
+    if [ -f "$marker_file" ]; then
+        log "[wt-claude-hook] Worktree already set up ($(cat "$marker_file")) — skipping."
+        exit 0
+    fi
+
+    log "[wt-claude-hook] EnterWorktree detected: $worktree_path"
+    log "[wt-claude-hook] Running: wt setup \"$worktree_path\" --quiet"
+
+    if wt setup "$worktree_path" --quiet; then
+        # Write marker with timestamp so subsequent EnterWorktree calls are no-ops.
+        date -u +"%Y-%m-%dT%H:%M:%SZ" > "$marker_file"
+        log "[wt-claude-hook] Setup complete. Marker written to $marker_file"
+    else
+        log "[wt-claude-hook] wt setup exited with an error — worktree may be partially configured."
+        log "[wt-claude-hook] Retry manually: wt setup \"$worktree_path\""
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# Mode: Bash (default) — watch for `git worktree add`
+# ---------------------------------------------------------------------------
+
+handle_bash_tool() {
+    require_bun
+    require_wt
+
+    # Guard: skip if input is missing or too large (>1MB) to avoid OOM in bun -e
+    if [ -z "${CLAUDE_TOOL_INPUT:-}" ]; then
+        exit 0
+    fi
+    local input_size=${#CLAUDE_TOOL_INPUT}
+    if [ "$input_size" -gt 1048576 ]; then
+        log "[wt-claude-hook] CLAUDE_TOOL_INPUT too large (${input_size} bytes) — skipping."
+        exit 0
+    fi
+
+    # The Bash tool input looks like: { "command": "git worktree add ..." }
+    local command_str
+    command_str=$(json_get "$CLAUDE_TOOL_INPUT" "command")
+
+    if [ -z "$command_str" ]; then
+        exit 0
+    fi
+
+    # Fast path: bail out immediately if this is not a worktree add.
+    case "$command_str" in
+        *"git worktree add"*) ;;  # fall through
+        *) exit 0 ;;
+    esac
+
+    log "[wt-claude-hook] Detected: git worktree add"
+
+    # ---------------------------------------------------------------------------
+    # Extract the worktree path from the command string.
+    #
+    # `git worktree add` forms:
+    #   git worktree add <path>
+    #   git worktree add <path> <branch>
+    #   git worktree add -b <new-branch> <path>
+    #   git worktree add --detach <path>
+    #   git worktree add <path> -b <new-branch> [<commit>]
+    #
+    # Strategy: use bun to tokenise the command and locate the path argument.
+    # ---------------------------------------------------------------------------
+
+    local worktree_path
+    worktree_path=$(bun -e "
+const cmd = process.env.WT_CMD || '';
+// Split respecting basic quoting (no eval)
+const tokens = cmd.match(/(?:[^\s'\"]+|'[^']*'|\"[^\"]*\")+/g) || [];
+
+// Find the index of 'worktree' then 'add' then skip option flags.
+let idx = -1;
+for (let i = 0; i < tokens.length - 1; i++) {
+    if (tokens[i] === 'worktree' && tokens[i+1] === 'add') {
+        idx = i + 2;
+        break;
+    }
+}
+if (idx === -1) { process.exit(0); }
+
+// Skip flags (-b <name>, --orphan <name>, --detach, -q, --quiet, etc.)
+while (idx < tokens.length) {
+    const t = tokens[idx];
+    if (t === '-b' || t === '-B' || t === '--orphan') {
+        idx += 2;  // skip flag and its argument
+    } else if (t.startsWith('-')) {
+        idx += 1;  // skip standalone flag
+    } else {
+        break;     // first non-flag token is the path
+    }
+}
+
+const path = tokens[idx] || '';
+// Strip surrounding quotes if present.
+process.stdout.write(path.replace(/^['\"](.*)['\"]$/, '\$1'));
+" WT_CMD="$command_str" 2>/dev/null || true)
+
+    if [ -z "$worktree_path" ]; then
+        log "[wt-claude-hook] Could not parse worktree path from command — skipping setup."
+        log "[wt-claude-hook] Command was: $command_str"
+        exit 0
+    fi
+
+    # Resolve absolute path (the command may use relative paths like ../feat-x).
+    # We cannot cd here (hook runs in its own context), so we rely on wt setup
+    # accepting relative paths and resolving them itself.
+    log "[wt-claude-hook] Extracted path: $worktree_path"
+    log "[wt-claude-hook] Running: wt setup \"$worktree_path\" --quiet"
+
+    if wt setup "$worktree_path" --quiet; then
+        # Write marker to suppress EnterWorktree double-setup.
+        local marker_file="${worktree_path}/.wt-setup-done"
+        date -u +"%Y-%m-%dT%H:%M:%SZ" > "$marker_file" 2>/dev/null || true
+        log "[wt-claude-hook] Setup complete."
+    else
+        log "[wt-claude-hook] wt setup exited with an error."
+        log "[wt-claude-hook] Retry manually: wt setup \"$worktree_path\""
+        # Exit 0 — a failed setup should not abort Claude's workflow.
+        exit 0
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
+MODE="${1:-}"
+
+case "$MODE" in
+    --mode=enter)
+        handle_enter_worktree
+        ;;
+    *)
+        handle_bash_tool
+        ;;
+esac
