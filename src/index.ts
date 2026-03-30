@@ -8,6 +8,7 @@ import removeCommand from "./commands/remove.ts";
 import cdCommand from "./commands/cd.ts";
 import initCommand from "./commands/init.ts";
 import doctorCommand from "./commands/doctor.ts";
+import shellInitCommand from "./commands/shell-init.ts";
 
 const VERSION = "0.1.0";
 
@@ -25,6 +26,7 @@ COMMANDS:
     cd <branch>         Print worktree path (for use with cd)
     init                Generate .worktreerc for this repo
     doctor [path]       Diagnose worktree setup issues
+    shell-init [shell]  Print shell integration (eval in .zshrc/.bashrc)
 
 GLOBAL OPTIONS:
     --help, -h          Show this help message
@@ -53,7 +55,9 @@ export interface ParsedFlags {
   defaults?: boolean;
   clean?: boolean;
   from?: string;
+  "copy-from"?: string;
   path?: string;
+  exec?: string;
   [key: string]: string | boolean | undefined;
 }
 
@@ -110,12 +114,28 @@ function parseArgs(argv: string[]): ParsedArgs {
         flags.from = next;
         i++;
       }
+    } else if (arg.startsWith("--copy-from=")) {
+      flags["copy-from"] = arg.slice("--copy-from=".length);
+    } else if (arg === "--copy-from") {
+      const next = argv[i + 1];
+      if (next && !next.startsWith("-")) {
+        flags["copy-from"] = next;
+        i++;
+      }
     } else if (arg.startsWith("--path=")) {
       flags.path = arg.slice("--path=".length);
     } else if (arg === "--path") {
       const next = argv[i + 1];
       if (next && !next.startsWith("-")) {
         flags.path = next;
+        i++;
+      }
+    } else if (arg.startsWith("--exec=")) {
+      flags.exec = arg.slice("--exec=".length);
+    } else if (arg === "--exec" || arg === "-x") {
+      const next = argv[i + 1];
+      if (next !== undefined) {
+        flags.exec = next;
         i++;
       }
     } else if (!arg.startsWith("-")) {
@@ -129,6 +149,13 @@ function parseArgs(argv: string[]): ParsedArgs {
 
 async function main(): Promise<number> {
   const argv = process.argv.slice(2);
+
+  // shell-init is handled before flag parsing so its positional arg
+  // (the shell name) is never misinterpreted as a flag.
+  if (argv[0] === "shell-init") {
+    return await shellInitCommand(argv.slice(1));
+  }
+
   const { command, args, flags } = parseArgs(argv);
 
   // Apply global flags to logger
@@ -179,6 +206,8 @@ async function main(): Promise<number> {
         return await initCommand(args, flags);
       case "doctor":
         return await doctorCommand(args, flags);
+      case "shell-init":
+        return await shellInitCommand(args);
       default:
         logger.error(`Unknown command: '${resolvedCommand}'. Run 'wt --help' for usage.`);
         return 1;

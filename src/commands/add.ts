@@ -13,10 +13,12 @@ import {
   getRepoRoot,
   addWorktree,
   getMainWorktreePath,
+  listWorktrees,
 } from "../core/git.ts";
 import { loadConfig, loadGlobalConfig, mergeConfig } from "../core/config.ts";
 import { detectProjectTypes } from "../core/detector.ts";
 import { installDeps } from "../core/installer.ts";
+import { copyIgnoredDirs } from "../core/copier.ts";
 import { setupEnvFiles } from "../core/env.ts";
 import { writeStatus } from "../core/status.ts";
 
@@ -30,22 +32,26 @@ ARGUMENTS:
                         Example: "feat-billing" -> "shreyansh/feat-billing"
 
 OPTIONS:
-    --from <base>       Base branch/commit to create the new branch from
-                        (default: current branch)
-    --no-deps           Skip dependency installation
-    --no-env            Skip .env file setup
-    --no-hooks          Skip pre/post hooks
-    --bare              Create a bare worktree (no branch checkout)
-    --path <dir>        Override worktree directory path
-    --dry-run           Show what would be done without executing
-    --existing          Checkout an existing branch rather than creating a new one
+    --from <base>         Base branch/commit to create the new branch from
+                          (default: current branch)
+    --copy-from <branch>  Copy node_modules/target from another worktree instead
+                          of running a fresh install.  Skips install when the
+                          lockfiles match; falls back to normal install otherwise.
+    --no-deps             Skip dependency installation
+    --no-env              Skip .env file setup
+    --no-hooks            Skip pre/post hooks
+    --bare                Create a bare worktree (no branch checkout)
+    --path <dir>          Override worktree directory path
+    --dry-run             Show what would be done without executing
+    --existing            Checkout an existing branch rather than creating a new one
 
 EXAMPLES:
-    wt add feat-billing                    Create worktree + branch from current
-    wt add feat-billing --from main        Branch from main
-    wt add fix-auth --no-deps             Skip dep install (quick text fix)
-    wt add feat-ui --path ~/worktrees/ui  Custom path
-    wt add release/v2 --existing          Checkout existing branch
+    wt add feat-billing                          Create worktree + branch from current
+    wt add feat-billing --from main              Branch from main
+    wt add feat-ui --copy-from main              Copy deps from main worktree (fast)
+    wt add fix-auth --no-deps                    Skip dep install (quick text fix)
+    wt add feat-ui --path ~/worktrees/ui         Custom path
+    wt add release/v2 --existing                 Checkout existing branch
 `.trim();
 
 // ---------------------------------------------------------------------------
@@ -121,7 +127,9 @@ export default async function addCommand(
   const skipHooks = flags["no-hooks"] === true;
   const useExisting = flags.existing === true;
   const fromBase = typeof flags.from === "string" ? flags.from : undefined;
+  const copyFrom = typeof flags["copy-from"] === "string" ? flags["copy-from"] : undefined;
   const customPath = typeof flags.path === "string" ? flags.path : undefined;
+  const execCmd = typeof flags.exec === "string" ? flags.exec : undefined;
 
   // --- Load config -------------------------------------------------------
   const repoRootRaw = await getRepoRoot(process.cwd());
@@ -152,9 +160,10 @@ export default async function addCommand(
 
   // --- Create the worktree -----------------------------------------------
   // Steps: (1) create worktree, (2) detect project type,
-  //        (3) install deps, (4) setup env files.
-  // Skipped steps still count toward the total so the counter stays consistent.
-  const totalSteps = 4;
+  //        (3) copy deps or install deps, (4) setup env files.
+  // When --copy-from is used there may be both a copy step and a fallback
+  // install step, so allocate an extra slot in that case.
+  const totalSteps = copyFrom ? 5 : 4;
   let step = 0;
 
   // Step 1: git worktree add
@@ -191,19 +200,61 @@ export default async function addCommand(
   const ecoNames = ecosystems.map((e) => `${e.type}(${e.pm})`);
   detectDone(ecoNames.length ? ecoNames.join(", ") : "none detected", Date.now() - detectStart);
 
-  // Step 3: Install deps
+  // Step 3: Install deps (or copy from another worktree)
   if (!skipDeps && ecosystems.length > 0) {
-    const depsDone = logger.step(++step, totalSteps, "Installing dependencies");
-    const depsStart = Date.now();
-    const results = await installDeps(worktreePath, ecosystems, config);
-    const failed = results.filter((r) => !r.success && !r.skipped);
-    if (failed.length > 0) {
-      depsDone(`partial (${failed.length} failed)`, Date.now() - depsStart);
-      for (const f of failed) {
-        logger.warn(`  ${f.ecosystem}: ${f.error ?? "install failed"}`);
+    let didCopy = false;
+
+    if (copyFrom) {
+      // Resolve source worktree path: accept a branch name or a direct path
+      const worktrees = await listWorktrees(repoRoot);
+      const sourceWorktree = worktrees.find(
+        (wt) =>
+          wt.branch === copyFrom ||
+          wt.branch === `${config.user.branch_prefix}/${copyFrom}` ||
+          wt.path === copyFrom,
+      );
+
+      if (!sourceWorktree) {
+        logger.warn(`--copy-from: no worktree found for '${copyFrom}' — falling back to normal install`);
+      } else {
+        const copyDone = logger.step(++step, totalSteps, `Copying deps from '${copyFrom}'`);
+        const copyStart = Date.now();
+        const copyResults = await copyIgnoredDirs(sourceWorktree.path, worktreePath, ecosystems);
+
+        const copied = copyResults.filter((r) => r.success);
+        const skipped = copyResults.filter((r) => !r.success && r.skipped);
+        const failed = copyResults.filter((r) => !r.success && !r.skipped);
+
+        if (copied.length > 0) {
+          const summary = copied.map((r) => `${r.dir} (${r.duration}ms)`).join(", ");
+          copyDone(summary, Date.now() - copyStart);
+          // Only skip normal install when node_modules was copied successfully
+          const nodeModulesCopied = copied.some((r) => r.dir === "node_modules");
+          if (nodeModulesCopied) didCopy = true;
+        } else if (skipped.length > 0) {
+          copyDone(`skipped — ${skipped[0]!.skipped}`, Date.now() - copyStart);
+        } else {
+          copyDone("failed", Date.now() - copyStart);
+          for (const f of failed) {
+            logger.warn(`  ${f.dir}: copy failed`);
+          }
+        }
       }
-    } else {
-      depsDone("done", Date.now() - depsStart);
+    }
+
+    if (!didCopy) {
+      const depsDone = logger.step(++step, totalSteps, "Installing dependencies");
+      const depsStart = Date.now();
+      const results = await installDeps(worktreePath, ecosystems, config);
+      const failed = results.filter((r) => !r.success && !r.skipped);
+      if (failed.length > 0) {
+        depsDone(`partial (${failed.length} failed)`, Date.now() - depsStart);
+        for (const f of failed) {
+          logger.warn(`  ${f.ecosystem}: ${f.error ?? "install failed"}`);
+        }
+      } else {
+        depsDone("done", Date.now() - depsStart);
+      }
     }
   } else {
     if (ecosystems.length === 0) {
@@ -247,6 +298,29 @@ export default async function addCommand(
   logger.success(`Worktree ready at: ${worktreePath}`);
   logger.info(`  Branch: ${fullBranch}`);
   logger.info(`  cd into it:  cd "${worktreePath}"`);
+
+  // --- Run --exec command in the new worktree ----------------------------
+  if (execCmd) {
+    logger.blank();
+    logger.info(`Running: ${execCmd}`);
+
+    // Route through sh -c to support shell operators; simple commands work fine too.
+    const argv = ["sh", "-c", execCmd];
+
+    const proc = Bun.spawn(argv, {
+      cwd: worktreePath,
+      env: process.env as Record<string, string>,
+      stdin: "inherit",
+      stdout: "inherit",
+      stderr: "inherit",
+    });
+
+    const exitCode = await proc.exited;
+    if (exitCode !== 0) {
+      logger.warn(`exec command exited with code ${exitCode}`);
+    }
+    return exitCode;
+  }
 
   return 0;
 }
