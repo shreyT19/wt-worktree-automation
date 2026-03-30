@@ -1,0 +1,62 @@
+---
+title: wt setup
+description: Run the setup pipeline on an existing worktree.
+---
+
+## Synopsis
+
+```
+wt setup [path] [options]
+```
+
+## Description
+
+`wt setup` runs the setup pipeline on an existing worktree. This is the command invoked automatically by the git hook and Claude Code hook.
+
+You can also call it manually to re-run setup after changing `.worktreerc`, or to set up a worktree that was created without `wt add`.
+
+## Arguments
+
+| Argument | Description |
+|----------|-------------|
+| `[path]` | Path to the worktree to set up (default: current directory) |
+
+## Options
+
+| Option | Description |
+|--------|-------------|
+| `--force` | Re-run even if setup was already completed |
+| `--clean` | Remove `node_modules` / `.venv` before reinstalling |
+| `--no-deps` | Skip dependency installation |
+| `--no-env` | Skip .env file setup |
+| `--no-hooks` | Skip hook commands |
+
+## Examples
+
+```bash
+# Set up the current directory
+wt setup
+
+# Set up a specific worktree by path
+wt setup ../myapp-feat-billing
+
+# Re-run after changing .worktreerc
+wt setup --force
+
+# Clean reinstall (removes node_modules and .venv first)
+wt setup --clean --force
+```
+
+## Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| `0` | Success |
+| `1` | Fatal error |
+| `2` | Completed with warnings |
+
+## Setup Status
+
+`wt setup` writes a `.wt-status.json` file to the worktree root after completion. This file records the setup timestamp, ecosystem, and outcome. `wt list` reads these files to show status in the table output.
+
+If you delete `.wt-status.json`, the worktree will show as `pending` in `wt list`, and `wt setup` will re-run from scratch (as if `--force` was passed).

@@ -1,0 +1,56 @@
+---
+title: wt list
+description: List all git worktrees with their setup status.
+---
+
+## Synopsis
+
+```
+wt list [options]
+```
+
+## Description
+
+`wt list` displays all git worktrees for the current repository in a tabular format, along with their dependency and env file status.
+
+## Options
+
+| Option | Description |
+|--------|-------------|
+| `--json` | Output as JSON (for scripting) |
+| `--status` | Show per-worktree ecosystem and timing detail |
+
+## Examples
+
+```bash
+wt list
+wt list --status      # show ecosystems, env strategy, setup timestamp
+wt list --json        # machine-readable output
+```
+
+## Output Format
+
+```
+  BRANCH                          PATH                                  DEPS    ENV     STATUS
+  ------------------------------------------------------------------------------------------------
+> main                            /Users/dev/myapp                      ok      ok      ready
+  shreyansh/feat-payments         /Users/dev/worktrees/myapp-feat-p...  ok      ok      ready
+```
+
+The `>` prefix marks your current working directory.
+
+## Status Values
+
+| Status | Meaning |
+|--------|---------|
+| `ready` | Setup completed successfully |
+| `partial` | Setup ran but one or more steps had warnings |
+| `failed` | Setup could not complete |
+| `pending` | Worktree created but setup has not run yet |
+| `-` | Bare worktree or no status file |
+
+## Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| `0` | Always (list commands do not fail) |

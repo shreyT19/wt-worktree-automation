@@ -1,0 +1,52 @@
+---
+title: wt init
+description: Interactively generate a .worktreerc for the current repository.
+---
+
+## Synopsis
+
+```
+wt init [options]
+```
+
+## Description
+
+`wt init` scans your repository and generates a `.worktreerc` configuration file tailored to what it finds. Run it once from the repo root and commit the result.
+
+## Options
+
+| Option | Description |
+|--------|-------------|
+| `--defaults` | Write the file immediately using detected defaults, without prompting for confirmation |
+
+## Behaviour
+
+1. Detect project ecosystems by scanning for marker files
+2. Scan for `.env` files (root and one level deep)
+3. Generate a `.worktreerc` tailored to what was found
+4. Show a preview and ask for confirmation (skipped with `--defaults`)
+5. Write `.worktreerc` to the repo root
+
+## Examples
+
+```bash
+wt init                  # interactive — shows preview before writing
+wt init --defaults       # write immediately, no prompts
+```
+
+After generating, review and commit:
+
+```bash
+git add .worktreerc && git commit -m 'chore: add worktreerc'
+```
+
+## Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| `0` | Success or user-aborted |
+| `1` | Not in a git repository |
+
+## Next Steps
+
+After running `wt init`, see the [Configuration reference](/docs/configuration) for a full explanation of every option in `.worktreerc`.

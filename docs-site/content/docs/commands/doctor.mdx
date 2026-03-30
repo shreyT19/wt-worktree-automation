@@ -1,0 +1,56 @@
+---
+title: wt doctor
+description: Diagnose setup issues with a pass/warn/fail checklist.
+---
+
+## Synopsis
+
+```
+wt doctor [path]
+```
+
+## Description
+
+`wt doctor` runs a diagnostic checklist on a worktree or the current directory and prints pass/warn/fail for each item. Use it to quickly identify why setup is failing or why the wrong package manager was detected.
+
+## Arguments
+
+| Argument | Description |
+|----------|-------------|
+| `[path]` | Directory to diagnose (default: current directory) |
+
+## Checks Performed
+
+- git version &ge; 2.5
+- `.worktreerc` TOML syntax is valid (if present)
+- `.gitignore` covers `.env` files
+- Required package managers are on PATH (`bun`, `uv`, `npm`, etc.)
+- `.env` files referenced in `env.patterns` exist in the main worktree
+- Symlinks in the worktree are not broken
+- `node_modules` / `.venv` are present when expected
+
+## Examples
+
+```bash
+wt doctor                            # check current directory
+wt doctor ../myapp-feat-billing      # check a specific worktree
+```
+
+## Output Format
+
+```
+  [ ok ]  git version >= 2.5 (worktree support)
+           git version 2.47.1
+  [warn]  .env file: .env.local
+           Not found in main worktree
+           fix: Create the file or remove it from env.patterns
+  [ ok ]  node_modules present
+```
+
+## Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| `0` | All checks passed |
+| `1` | One or more failures |
+| `2` | Warnings only |

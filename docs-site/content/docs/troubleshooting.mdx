@@ -1,0 +1,83 @@
+---
+title: Troubleshooting
+description: Solutions to common issues with wt setup, package manager detection, and environment files.
+---
+
+## `wt setup` hangs
+
+The package manager install step is blocking. Check whether your package manager is prompting for input (e.g. an interactive credential prompt). Run `wt setup --verbose` to see the exact command being executed, then run it manually in the worktree to observe the output directly.
+
+## Dependencies not installing / wrong package manager detected
+
+Run `wt doctor` — it checks which package managers are on PATH and whether the expected lockfiles are present. If the wrong PM is detected, pin it explicitly in `.worktreerc`:
+
+```toml
+[deps]
+node_pm = "pnpm"
+```
+
+## `.env` file not copied or symlinked
+
+Check two things:
+
+1. The file exists in the main worktree (`wt doctor` will flag it if not)
+2. The filename matches a pattern in `env.patterns`
+
+If the file is listed in `env.exclude`, it will be skipped intentionally. Run `wt doctor` for a full diagnosis including a broken-symlink check.
+
+## "Worktree already exists" error
+
+If `wt add` fails because the worktree path already exists, you have options:
+
+```bash
+# If the worktree is registered with git, navigate to it
+cd "$(wt cd feat-billing)"
+
+# If it was created but setup never ran
+wt setup /path/to/existing/worktree
+
+# If the directory is stale (not registered with git)
+git worktree prune
+wt add feat-billing
+```
+
+## `wt: command not found` after install
+
+Ensure `~/.local/bin` (or your custom `--prefix`) is on your PATH:
+
+```bash
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+## Symlinks are broken after moving the main worktree
+
+If you move or rename the main repository directory, any symlinks created with `strategy = "symlink"` will break. Re-run setup with `--force` to recreate them:
+
+```bash
+wt setup --force
+```
+
+Or switch to `strategy = "copy"` in `.worktreerc` to avoid this in the future.
+
+## `wt doctor` output
+
+Always start with `wt doctor` when debugging — it provides a checklist of everything that could go wrong:
+
+```bash
+wt doctor           # check current directory
+wt doctor ../feat   # check a specific worktree
+```
+
+Look for `[warn]` and `[fail]` lines. Each one includes a brief explanation and a suggested fix.
+
+## Verbose output
+
+Most commands support `--verbose` for detailed logging:
+
+```bash
+wt setup --verbose
+wt add feat-test --verbose
+```
+
+Verbose output shows the exact shell commands being executed and their exit codes.

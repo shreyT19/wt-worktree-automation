@@ -1,0 +1,74 @@
+---
+title: wt add
+description: Create a new git worktree and run the full setup pipeline.
+---
+
+## Synopsis
+
+```
+wt add <branch> [options]
+```
+
+## Description
+
+`wt add` creates a new git worktree and runs the full four-step setup pipeline:
+
+1. Create the worktree directory and check out the branch
+2. Detect the project ecosystem (Node.js, Python, Rust, Go)
+3. Install dependencies using the detected package manager
+4. Copy or symlink `.env` files from the main worktree
+
+## Options
+
+| Option | Description |
+|--------|-------------|
+| `--from <base>` | Base branch or commit to create the new branch from (default: current HEAD) |
+| `--existing` | Check out an existing branch instead of creating one |
+| `--path <dir>` | Override the worktree directory path |
+| `--no-deps` | Skip dependency installation |
+| `--no-env` | Skip .env file setup |
+| `--no-hooks` | Skip pre/post hook commands |
+| `--bare` | Create a bare worktree (no branch checkout) |
+| `--dry-run` | Print what would happen without executing anything |
+
+## Examples
+
+```bash
+# Create a worktree branching from current HEAD
+wt add feat-billing
+
+# Branch from main, with a branch prefix applied automatically
+wt add feat-billing --from main
+# -> creates shreyansh/feat-billing if branch_prefix = "shreyansh" in global config
+
+# Custom path
+wt add feat-ui --path ~/worktrees/ui
+
+# Check out an existing branch (e.g. a colleague's PR branch)
+wt add release/v2 --existing
+
+# Quick worktree for a code review — skip the slow install step
+wt add fix-typo --no-deps
+
+# Preview without making changes
+wt add feat-billing --dry-run
+```
+
+## Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| `0` | Success |
+| `1` | Error (see output for details) |
+
+## Worktree Path
+
+The worktree is placed at `{base_dir}/{name_pattern}` by default. These values come from your `.worktreerc` or global config:
+
+```toml
+[worktree]
+base_dir = "../worktrees"
+name_pattern = "{repo}-{short_branch}"
+```
+
+Override for a single run using `--path`.

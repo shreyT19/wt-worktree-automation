@@ -1,0 +1,42 @@
+---
+title: Shell Completions
+description: Install tab completions for wt in zsh or bash.
+---
+
+## Automatic Install
+
+Shell completions are installed automatically when you use `./install.sh`. The installer asks which shell you use and places the completion file in the right location.
+
+## Zsh
+
+The installer places a completion file at `~/.zsh/completions/_wt`. If that directory is not in your `fpath`, add this to `~/.zshrc`:
+
+```zsh
+fpath=("$HOME/.zsh/completions" $fpath)
+autoload -Uz compinit && compinit
+```
+
+Then restart your shell or run `source ~/.zshrc`.
+
+## Bash
+
+The installer places a completion file in `~/.local/share/bash-completion/completions/wt`. If bash-completion is not set up, add this to `~/.bashrc`:
+
+```bash
+source /path/to/wt/completions/wt.bash
+```
+
+## What Gets Completed
+
+- **Subcommands**: `add`, `setup`, `list`, `remove`, `cd`, `init`, `doctor`
+- **Branch names**: Tab-completes existing worktree branches for `remove` and `cd`
+- **Flags**: All options for each subcommand
+
+## Troubleshooting
+
+If completions are not working after installation:
+
+1. Ensure the completion file exists in the expected location
+2. For zsh: confirm the directory is in your `fpath` with `echo $fpath`
+3. Rebuild the completion cache: `rm -f ~/.zcompdump && exec zsh`
+4. Run `wt doctor` to check for any PATH or setup issues

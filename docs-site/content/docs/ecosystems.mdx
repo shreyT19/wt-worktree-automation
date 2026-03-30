@@ -1,0 +1,84 @@
+---
+title: Ecosystem Support
+description: Supported languages and package managers, detection signals, and multi-ecosystem repos.
+---
+
+## Supported Ecosystems
+
+`wt` auto-detects the following ecosystems by scanning for marker files:
+
+| Ecosystem | Package Managers | Detection Signal |
+|-----------|-----------------|-----------------|
+| Node.js | bun, pnpm, yarn, npm | `package.json` + lockfile |
+| Python | uv, poetry, pipenv, pip | `Pipfile`, `pyproject.toml`, `requirements.txt` |
+| Rust | cargo | `Cargo.toml` |
+| Go | go | `go.mod` |
+
+## Node.js Detection
+
+Lockfile priority (highest wins):
+
+1. `bun.lockb` → **bun**
+2. `pnpm-lock.yaml` → **pnpm**
+3. `yarn.lock` → **yarn**
+4. `package-lock.json` → **npm**
+5. (none found) → **bun** (default)
+
+Override in `.worktreerc`:
+
+```toml
+[deps]
+node_pm = "pnpm"
+```
+
+## Python Detection
+
+| Signal | Package Manager |
+|--------|----------------|
+| `Pipfile` | pipenv |
+| `pyproject.toml` with `[tool.poetry]` | poetry |
+| `pyproject.toml` with `[tool.uv]` or `[project]` | uv |
+| `requirements.txt` only | uv |
+
+Override in `.worktreerc`:
+
+```toml
+[deps]
+python_pm = "poetry"
+```
+
+## Multi-Ecosystem Repos
+
+Repos with multiple ecosystems (e.g. a Node.js frontend + Python backend) are handled correctly. `wt` runs the appropriate installer for each detected ecosystem sequentially.
+
+```
+[1/4] Creating worktree ........................ done
+[2/4] Detecting project type .................. node(bun), python(uv)
+[3/4] Installing dependencies ................. done
+[4/4] Setting up env files .................... 2 files
+```
+
+## Overriding Detection
+
+If auto-detection is unreliable for your setup, pin the ecosystems explicitly in `.worktreerc`:
+
+```toml
+[detect]
+types = ["node", "python"]
+```
+
+When `types` is set, `wt` skips file scanning entirely and uses exactly these ecosystems.
+
+## Custom Install Commands
+
+For monorepos or non-standard setups, bypass ecosystem detection entirely with custom commands:
+
+```toml
+[deps.custom]
+commands = [
+    "bun install --frozen-lockfile",
+    "cd services/api && uv venv .venv && uv pip install -e '.[dev]'",
+]
+```
+
+Custom commands run from the worktree root in the listed order.

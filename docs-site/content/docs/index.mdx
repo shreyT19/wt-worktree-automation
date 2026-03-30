@@ -1,0 +1,78 @@
+---
+title: Introduction
+description: wt — instantly create fully configured git worktrees with dependencies installed and .env files in place.
+---
+
+## What is wt?
+
+`wt` is a CLI tool that wraps `git worktree add` with a four-step setup pipeline: create the worktree, detect your project ecosystem, install dependencies, and wire up environment files — all in one command.
+
+Switching between features in a large codebase means either stashing changes, losing your running dev server, or waiting for `bun install` / `uv sync` to finish every time you context-switch. Git worktrees solve the isolation problem, but they arrive as empty checkouts — you still have to manually install packages, copy `.env` files, and run any required codegen before you can start work.
+
+**`wt` automates all of that.**
+
+## Quick Demo
+
+```
+$ wt add feat-billing
+
+Creating worktree for branch 'shreyansh/feat-billing'
+  path: ../worktrees/myapp-feat-billing
+
+[1/4] Creating worktree ........................ done (312ms)
+[2/4] Detecting project type .................. node(bun), python(uv) (28ms)
+[3/4] Installing dependencies ................. done (8.4s)
+[4/4] Setting up env files .................... 2 files (11ms)
+
+Worktree ready at: /Users/dev/worktrees/myapp-feat-billing
+  Branch: shreyansh/feat-billing
+  cd into it:  cd "/Users/dev/worktrees/myapp-feat-billing"
+```
+
+## Key Features
+
+- **Cross-ecosystem detection** — Node.js, Python, Rust, Go. Picks the right package manager automatically.
+- **.env file management** — Symlink or copy `.env` files with a single config line.
+- **Claude Code integration** — Worktrees auto-configure when Claude creates them.
+- **Team-ready config** — Commit `.worktreerc` with your code. Every developer gets the same setup.
+- **Full lifecycle** — `add`, `list`, `remove`, `cd`, `init`, and `doctor` commands.
+- **Shell completions** — First-class zsh and bash completion support.
+
+## Getting Started
+
+**Step 1 — Install `wt`**
+
+```bash
+git clone https://github.com/shreyT19/git-wt ~/tools/wt
+cd ~/tools/wt
+./install.sh
+```
+
+**Step 2 — Generate a config for your repo**
+
+```bash
+cd ~/projects/myapp
+wt init
+```
+
+`wt init` scans for package managers and `.env` files, then writes a `.worktreerc`. Review the preview, press Enter to confirm, then commit the file:
+
+```bash
+git add .worktreerc && git commit -m 'chore: add worktreerc'
+```
+
+**Step 3 — Create your first worktree**
+
+```bash
+wt add feat-payments
+```
+
+See [Installation](/docs/installation) for full setup instructions, or jump straight to the [Commands Reference](/docs/commands/add).
+
+## Config Resolution Order
+
+CLI flags override everything. The full priority chain (highest first):
+
+```
+CLI flags → .worktreerc → ~/.config/wt/config.toml → compiled defaults
+```

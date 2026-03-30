@@ -1,0 +1,75 @@
+---
+title: Installation
+description: How to install wt on your machine, including prerequisites, quick install, and manual setup.
+---
+
+## Prerequisites
+
+- **bun** &ge; 1.0 — `curl -fsSL https://bun.sh/install | bash`
+- **git** &ge; 2.5 — worktree support was added in git 2.5
+
+## Quick Install
+
+```bash
+git clone https://github.com/shreyT19/git-wt ~/tools/wt
+cd ~/tools/wt
+./install.sh
+```
+
+The installer is interactive and will:
+
+1. Verify prerequisites
+2. Run `bun install`
+3. Create a `wt` wrapper script in `~/.local/bin` (or a `--prefix` of your choice)
+4. Optionally install the `post-checkout` git hook into your repos
+5. Optionally configure Claude Code hooks in `~/.claude/settings.json`
+6. Optionally install shell completions for zsh or bash
+
+For unattended installs:
+
+```bash
+./install.sh --non-interactive --prefix ~/.local
+```
+
+## Manual Install
+
+If you prefer full control:
+
+```bash
+# 1. Clone and install dependencies
+git clone https://github.com/shreyT19/git-wt ~/tools/wt
+cd ~/tools/wt && bun install
+
+# 2. Create the wt wrapper (adjust path as needed)
+cat > ~/.local/bin/wt <<'EOF'
+#!/usr/bin/env bash
+exec bun run /path/to/wt/src/index.ts "$@"
+EOF
+chmod +x ~/.local/bin/wt
+
+# 3. Ensure the bin dir is on PATH
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
+```
+
+## Verify Installation
+
+```bash
+wt --version   # wt v0.1.0
+wt doctor      # runs a checklist of all prerequisites
+```
+
+## Shell Completions
+
+Completions are installed automatically when you use `./install.sh`. See [Shell Completions](/docs/completions) for manual installation instructions.
+
+## Updating
+
+Pull the latest changes and reinstall:
+
+```bash
+cd ~/tools/wt
+git pull
+bun install
+```
+
+The `wt` wrapper script and completions do not need to be reinstalled after updates.

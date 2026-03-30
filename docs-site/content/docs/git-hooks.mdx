@@ -1,0 +1,45 @@
+---
+title: Git Hook Integration
+description: Automatically run wt setup on new worktrees using the post-checkout git hook.
+---
+
+## Overview
+
+The `post-checkout` hook triggers `wt setup` automatically whenever `git worktree add` creates a new worktree. It detects new worktrees by checking whether the previous HEAD is the null SHA (`0000...`).
+
+## Install
+
+```bash
+cp /path/to/wt/hooks/post-checkout /path/to/myrepo/.git/hooks/post-checkout
+chmod +x /path/to/myrepo/.git/hooks/post-checkout
+```
+
+Or let the installer handle it interactively during `./install.sh`.
+
+## Behaviour
+
+- The hook exits `0` even if `wt` is not on PATH — it prints a warning and lets the checkout succeed.
+- It never blocks a git operation.
+- A `.wt-setup-done` marker file prevents re-running setup if both the git hook and the Claude Code hook fire for the same worktree.
+
+## How It Works
+
+The hook checks `$3` (the branch checkout flag) and `$1` (the previous HEAD). When previous HEAD is all zeros, git is performing an initial checkout into a new worktree:
+
+```bash
+#!/usr/bin/env bash
+# Only run for new worktree checkouts
+if [ "$3" = "1" ] && [ "$1" = "0000000000000000000000000000000000000000" ]; then
+  if command -v wt &>/dev/null; then
+    wt setup "$(pwd)" --quiet
+  else
+    echo "wt: not found on PATH — skipping auto-setup" >&2
+  fi
+fi
+```
+
+## Notes
+
+The git hook approach works with any tool that calls `git worktree add` — including IDE integrations, scripts, and other CLIs. If you primarily use `wt add`, the hook is redundant but harmless.
+
+For Claude Code specifically, the [Claude Code hooks](/docs/claude-code) provide richer integration.

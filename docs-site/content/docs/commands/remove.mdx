@@ -1,0 +1,50 @@
+---
+title: wt remove
+description: Remove a git worktree cleanly, checking for uncommitted changes first.
+---
+
+## Synopsis
+
+```
+wt remove <branch> [options]
+```
+
+## Description
+
+`wt remove` removes a git worktree cleanly. It checks for uncommitted changes before proceeding and optionally deletes the associated git branch.
+
+## Arguments
+
+| Argument | Description |
+|----------|-------------|
+| `<branch>` | Branch name or partial match. `"feat"` matches `"shreyansh/feat-billing"` |
+
+## Options
+
+| Option | Description |
+|--------|-------------|
+| `--force` | Remove even if there are uncommitted changes; also force-deletes the branch (`-D` instead of `-d`) |
+| `--keep-branch` | Remove the worktree but keep the git branch |
+
+## Behaviour
+
+1. Find the worktree by branch name (exact or partial match)
+2. Check for uncommitted changes — abort unless `--force`
+3. Run `git worktree remove`
+4. Delete the git branch with `git branch -d` (unless `--keep-branch`)
+
+## Examples
+
+```bash
+wt remove feat-billing
+wt remove feat-billing --keep-branch   # preserve the branch for later
+wt remove feat-billing --force         # discard uncommitted changes
+```
+
+## Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| `0` | Success |
+| `1` | Error |
+| `2` | Partial success (worktree removed but branch deletion failed) |

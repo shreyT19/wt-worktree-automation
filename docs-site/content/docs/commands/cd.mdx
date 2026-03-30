@@ -1,0 +1,61 @@
+---
+title: wt cd
+description: Print the absolute path to a worktree for use with command substitution.
+---
+
+## Synopsis
+
+```
+wt cd <branch>
+```
+
+## Description
+
+`wt cd` prints the absolute path to a worktree. Use it with command substitution to navigate directly to any worktree by (partial) branch name.
+
+`wt cd` writes the path to stdout and all other output to stderr, so the path can be captured cleanly in scripts.
+
+## Arguments
+
+| Argument | Description |
+|----------|-------------|
+| `<branch>` | Branch name (partial matching supported) |
+
+## Examples
+
+```bash
+# Direct use
+cd "$(wt cd feat-billing)"
+
+# Partial match — "feat" resolves to "shreyansh/feat-billing" unambiguously
+cd "$(wt cd feat)"
+```
+
+## Recommended Shell Function
+
+Add this to `~/.zshrc` or `~/.bashrc`:
+
+```bash
+wtcd() { cd "$(wt cd "$1")" }
+```
+
+Then `wtcd feat` navigates directly without quoting.
+
+## Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| `0` | Success (path printed to stdout) |
+| `1` | No match or ambiguous match |
+
+## Partial Matching
+
+Partial matching resolves unambiguously when only one worktree contains the given string. If multiple worktrees match, `wt cd` exits with code `1` and prints the ambiguous matches to stderr.
+
+```bash
+# Unambiguous — only one worktree contains "billing"
+cd "$(wt cd billing)"
+
+# Ambiguous — prints error and exits 1 if both "feat-billing" and "fix-billing" exist
+cd "$(wt cd bill)"
+```

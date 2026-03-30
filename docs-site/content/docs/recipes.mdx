@@ -1,0 +1,105 @@
+---
+title: Recipes
+description: Common workflow patterns and examples for using wt effectively.
+---
+
+## Quick worktree for a hotfix
+
+```bash
+wt add hotfix-login-crash --from main
+cd "$(wt cd hotfix)"
+# make changes, then:
+wt remove hotfix-login-crash
+```
+
+## Worktree with a custom path
+
+```bash
+wt add feat-payments --path ~/sandbox/payments
+```
+
+## Skip deps for a quick code review
+
+```bash
+wt add review/pr-482 --existing --no-deps --no-env
+cd "$(wt cd pr-482)"
+```
+
+## Re-run setup after a config change
+
+```bash
+# You updated .worktreerc — re-apply to an existing worktree
+wt setup --force ../myapp-feat-billing
+
+# Clean reinstall (removes node_modules and .venv)
+wt setup --clean --force ../myapp-feat-billing
+```
+
+## Navigate between worktrees
+
+```bash
+# Exact match
+cd "$(wt cd feat-billing)"
+
+# Partial match — resolves unambiguously
+cd "$(wt cd billing)"
+
+# Shell function shorthand (add to ~/.zshrc)
+wtcd() { cd "$(wt cd "$1")" }
+wtcd billing
+```
+
+## Clean up all worktrees
+
+```bash
+# List everything first
+wt list
+
+# Remove one by one (partial names work)
+wt remove billing
+wt remove payments
+```
+
+## Preview before creating
+
+```bash
+# See exactly what wt add would do, without making changes
+wt add feat-billing --dry-run
+```
+
+## Monorepo with custom install commands
+
+For monorepos or non-standard setups, define custom install steps in `.worktreerc`:
+
+```toml
+[deps.custom]
+commands = [
+    "bun install --frozen-lockfile",
+    "cd packages/api && uv venv .venv && uv pip install -e '.[dev]'",
+    "bun run build:shared",
+]
+```
+
+## Team-shared worktreerc
+
+Commit `.worktreerc` so everyone gets the same setup:
+
+```bash
+wt init
+git add .worktreerc
+git commit -m 'chore: add worktreerc'
+```
+
+Every developer who runs `wt add` will get the same dependency installation, env file setup, and hook commands automatically.
+
+## Branch prefix for personal forks
+
+Set a global branch prefix so all your branches are namespaced:
+
+```toml
+# ~/.config/wt/config.toml
+[user]
+branch_prefix = "yourname"
+```
+
+Now `wt add feat-billing` creates `yourname/feat-billing`.

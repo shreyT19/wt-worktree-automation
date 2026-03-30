@@ -1,0 +1,27 @@
+{
+  "title": "Documentation",
+  "pages": [
+    "---Getting Started---",
+    "index",
+    "installation",
+    "---Commands---",
+    "commands/add",
+    "commands/setup",
+    "commands/list",
+    "commands/remove",
+    "commands/cd",
+    "commands/init",
+    "commands/doctor",
+    "---Configuration---",
+    "configuration",
+    "global-config",
+    "---Integrations---",
+    "ecosystems",
+    "claude-code",
+    "git-hooks",
+    "completions",
+    "---Guides---",
+    "recipes",
+    "troubleshooting"
+  ]
+}

@@ -1,0 +1,95 @@
+---
+title: Claude Code Integration
+description: Automatically configure worktrees when Claude Code creates them using wt's PostToolUse and WorktreeCreate hooks.
+---
+
+## Overview
+
+`wt` ships two hooks designed for Claude Code. Both are installed automatically by `./install.sh`.
+
+When configured, worktrees created by Claude are fully set up before Claude's next step — no manual `wt setup` required.
+
+## PostToolUse Hook (`wt-claude-hook`)
+
+**What it does**: After every Bash tool call, checks whether the command was `git worktree add`. If so, extracts the destination path and runs `wt setup <path> --quiet` immediately, so the worktree is fully configured before Claude's next step.
+
+The hook also handles the `EnterWorktree` tool (with `--mode=enter`): when Claude enters a worktree that has not been set up yet, it runs `wt setup` automatically.
+
+**How to install manually** — add to `~/.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "/path/to/wt-claude-hook" }
+        ]
+      },
+      {
+        "matcher": "EnterWorktree",
+        "hooks": [
+          { "type": "command", "command": "/path/to/wt-claude-hook --mode=enter" }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Replace `/path/to/wt-claude-hook` with `~/.local/bin/wt-claude-hook` if you used the default install prefix.
+
+The hook uses `CLAUDE_TOOL_INPUT` (JSON) to read the Bash command or the worktree path. A `.wt-setup-done` marker file prevents double-setup when both the Bash hook and the EnterWorktree hook fire for the same worktree.
+
+## WorktreeCreate Hook (`wt-worktree-create`)
+
+**What it does**: Replaces Claude Code's default `git worktree add` behaviour when Claude is launched with `claude --worktree` or when a subagent specifies `isolation: "worktree"`. It creates the worktree using `wt`'s path logic, then runs `wt setup` automatically, and prints the absolute path to stdout (which Claude Code requires).
+
+**How to install manually** — add to `~/.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "WorktreeCreate": [
+      {
+        "hooks": [
+          { "type": "command", "command": "/path/to/wt-worktree-create" }
+        ]
+      }
+    ]
+  }
+}
+```
+
+## Combined Configuration
+
+Here is a complete `~/.claude/settings.json` with both hooks:
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "~/.local/bin/wt-claude-hook" }
+        ]
+      },
+      {
+        "matcher": "EnterWorktree",
+        "hooks": [
+          { "type": "command", "command": "~/.local/bin/wt-claude-hook --mode=enter" }
+        ]
+      }
+    ],
+    "WorktreeCreate": [
+      {
+        "hooks": [
+          { "type": "command", "command": "~/.local/bin/wt-worktree-create" }
+        ]
+      }
+    ]
+  }
+}
+```

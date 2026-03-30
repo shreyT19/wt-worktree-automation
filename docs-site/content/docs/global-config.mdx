@@ -1,0 +1,54 @@
+---
+title: Global Config
+description: User-level defaults in ~/.config/wt/config.toml that apply across all repositories.
+---
+
+## Overview
+
+The global config lives at `~/.config/wt/config.toml`. It sets user-level defaults that apply across all repositories. Per-repo `.worktreerc` values override these.
+
+## Full Reference
+
+```toml
+[user]
+# Prefix automatically prepended to new branch names.
+# "feat-billing" becomes "shreyansh/feat-billing"
+branch_prefix = "shreyansh"
+
+[defaults]
+# Default env strategy when no .worktreerc is present.
+# Options: "symlink" | "copy" | "skip"
+env_strategy = "symlink"
+
+# Default base directory for worktrees (overridden by .worktreerc).
+base_dir = "~/dev/worktrees"
+
+# Set to false to disable automatic dep installation globally.
+auto_deps = true
+
+[aliases]
+# Define short aliases for commands.
+# These are in addition to the built-in single-letter aliases
+# (a=add, r=remove, l=list, s=setup, d=doctor).
+new = "add"
+```
+
+## Built-in Aliases
+
+The following single-letter aliases are always available:
+
+| Alias | Command |
+|-------|---------|
+| `a` | `add` |
+| `r` | `remove` |
+| `l` | `list` |
+| `s` | `setup` |
+| `d` | `doctor` |
+
+## Config Resolution Order
+
+Per-repo `.worktreerc` always takes precedence over global config:
+
+```
+CLI flags > .worktreerc > ~/.config/wt/config.toml > compiled defaults
+```
