@@ -1,28 +1,12 @@
 /**
  * Logger utility for the wt CLI.
  *
+ * Cargo-style right-aligned verb output using picocolors.
  * Supports debug/info/warn/error levels controlled by --quiet / --verbose flags.
- * Uses ANSI colors when stdout is a TTY. Supports step-progress formatting.
+ * Colors are automatically skipped when stdout is not a TTY.
  */
 
-// ============================================================================
-// ANSI color helpers
-// ============================================================================
-
-const isTTY = process.stdout.isTTY === true;
-
-const ansi = {
-  reset:   isTTY ? "\x1b[0m"  : "",
-  bold:    isTTY ? "\x1b[1m"  : "",
-  dim:     isTTY ? "\x1b[2m"  : "",
-  red:     isTTY ? "\x1b[31m" : "",
-  green:   isTTY ? "\x1b[32m" : "",
-  yellow:  isTTY ? "\x1b[33m" : "",
-  blue:    isTTY ? "\x1b[34m" : "",
-  cyan:    isTTY ? "\x1b[36m" : "",
-  white:   isTTY ? "\x1b[37m" : "",
-  gray:    isTTY ? "\x1b[90m" : "",
-};
+import pc from "picocolors";
 
 // ============================================================================
 // Log level definitions
@@ -32,8 +16,8 @@ export type LogLevel = "debug" | "info" | "warn" | "error";
 
 const LEVEL_RANK: Record<LogLevel, number> = {
   debug: 0,
-  info:  1,
-  warn:  2,
+  info: 1,
+  warn: 2,
   error: 3,
 };
 
@@ -52,8 +36,8 @@ interface LoggerState {
 }
 
 const state: LoggerState = {
-  level:   "info",
-  quiet:   false,
+  level: "info",
+  quiet: false,
   verbose: false,
   logFile: null,
 };
@@ -64,9 +48,29 @@ export function configureLogger(opts: {
   verbose?: boolean;
   logFile?: string;
 }): void {
-  if (opts.quiet)   { state.quiet = true;   state.level = "error"; }
-  if (opts.verbose) { state.verbose = true;  state.level = "debug"; }
+  if (opts.quiet) {
+    state.quiet = true;
+    state.level = "error";
+  }
+  if (opts.verbose) {
+    state.verbose = true;
+    state.level = "debug";
+  }
   if (opts.logFile) state.logFile = opts.logFile;
+}
+
+// ============================================================================
+// Formatting helpers
+// ============================================================================
+
+const VERB_WIDTH = 12;
+
+/** Right-align a verb in a 12-char column and apply bold + color. */
+function formatVerb(
+  verb: string,
+  color: (s: string) => string = pc.green,
+): string {
+  return color(pc.bold(verb.padStart(VERB_WIDTH)));
 }
 
 // ============================================================================
@@ -92,19 +96,16 @@ async function writeToFile(line: string): Promise<void> {
   }
 }
 
-function emit(level: LogLevel, prefix: string, msg: string): void {
+function emit(level: LogLevel, formatted: string, plainMsg: string): void {
   if (!shouldEmit(level)) return;
 
-  const plain = `[${timestamp()}] [${level.toUpperCase()}] ${msg}`;
-
-  // write to log file (no ANSI)
+  const plain = `[${timestamp()}] [${level.toUpperCase()}] ${plainMsg}`;
   void writeToFile(plain);
 
-  // write to console (with ANSI if TTY)
   if (level === "error") {
-    process.stderr.write(prefix + msg + ansi.reset + "\n");
+    process.stderr.write(formatted + "\n");
   } else {
-    process.stdout.write(prefix + msg + ansi.reset + "\n");
+    process.stdout.write(formatted + "\n");
   }
 }
 
@@ -113,20 +114,80 @@ function emit(level: LogLevel, prefix: string, msg: string): void {
 // ============================================================================
 
 export const logger = {
-  debug(msg: string): void {
-    emit("debug", `${ansi.gray}[debug] `, msg);
+  /**
+   * Configure logger options. Alias for configureLogger().
+   */
+  configure(opts: { quiet?: boolean; verbose?: boolean }): void {
+    configureLogger(opts);
   },
 
-  info(msg: string): void {
-    emit("info", "", msg);
+  /** Whether the logger is in quiet mode. */
+  isQuiet(): boolean {
+    return state.quiet;
   },
 
+  // --------------------------------------------------------------------------
+  // Cargo-style verb output
+  // --------------------------------------------------------------------------
+
+  /**
+   * Print a right-aligned verb followed by a message.
+   *
+   *     Creating worktree at ../worktrees/myapp-feat-billing
+   */
+  verb(
+    verb: string,
+    message: string,
+    color: (s: string) => string = pc.green,
+  ): void {
+    if (!shouldEmit("info")) return;
+    const line = `${formatVerb(verb, color)} ${message}`;
+    emit("info", line, `${verb} ${message}`);
+  },
+
+  /**
+   * Print an indented sub-detail in dim.
+   */
+  detail(message: string): void {
+    if (!shouldEmit("info")) return;
+    const indent = " ".repeat(VERB_WIDTH + 1);
+    const line = `${indent}${pc.dim(message)}`;
+    emit("info", line, `  ${message}`);
+  },
+
+  /**
+   * Print a success message with a green checkmark prefix.
+   */
+  success(msg: string): void {
+    if (!shouldEmit("info")) return;
+    const line = `${formatVerb(pc.green("\u2713"), pc.green)} ${msg}`;
+    emit("info", line, `ok ${msg}`);
+  },
+
+  /**
+   * Print a warning message with a yellow warning prefix.
+   */
   warn(msg: string): void {
-    emit("warn", `${ansi.yellow}warn: ${ansi.reset}`, msg);
+    const line = `${formatVerb("\u26A0", pc.yellow)} ${pc.yellow(msg)}`;
+    emit("warn", line, `warn: ${msg}`);
   },
 
+  /**
+   * Print an error message with a red cross prefix.
+   */
   error(msg: string): void {
-    emit("error", `${ansi.red}error: ${ansi.reset}`, msg);
+    const line = `${formatVerb("\u2717", pc.red)} ${pc.red(msg)}`;
+    emit("error", line, `error: ${msg}`);
+  },
+
+  /**
+   * Print a hint with a dim arrow prefix.
+   */
+  hint(message: string): void {
+    if (!shouldEmit("info")) return;
+    const indent = " ".repeat(VERB_WIDTH + 1);
+    const line = `${indent}${pc.dim("\u2192 " + message)}`;
+    emit("info", line, `-> ${message}`);
   },
 
   /**
@@ -138,73 +199,99 @@ export const logger = {
   },
 
   /**
-   * Format a step indicator like "[1/4] Creating worktree..."
-   * Returns a function that, when called with the result string, prints the
-   * completion suffix on the same line:  "  done (0.2s)"
+   * Format a step indicator and print it without a newline (on TTY).
+   * Returns void. Call stepDone() when the step completes.
    *
    * Usage:
-   *   const done = logger.step(1, 4, "Creating worktree");
+   *   logger.step(1, 4, "Creating worktree");
    *   // ... do work ...
-   *   done("done", elapsed);
+   *   logger.stepDone("done", elapsed);
    */
   step(
     current: number,
     total: number,
     description: string,
   ): (result: string, elapsedMs?: number) => void {
-    const stepLabel = `${ansi.bold}${ansi.blue}[${current}/${total}]${ansi.reset}`;
-    const line = `${stepLabel} ${description}...`;
+    const verb = `[${current}/${total}]`;
+    const line = `${formatVerb(verb, pc.blue)} ${description}...`;
 
     if (!shouldEmit("info")) {
-      // quiet mode — return a no-op
       return () => {};
     }
 
+    const isTTY = process.stdout.isTTY === true;
+
     if (isTTY) {
-      // print without newline so we can append the result
       process.stdout.write(line);
       return (result: string, elapsedMs?: number) => {
-        const timing = elapsedMs !== undefined
-          ? `${ansi.gray} (${(elapsedMs / 1000).toFixed(1)}s)${ansi.reset}`
-          : "";
-        process.stdout.write(`  ${ansi.green}${result}${ansi.reset}${timing}\n`);
+        const timing =
+          elapsedMs !== undefined ? pc.dim(` (${formatDuration(elapsedMs)})`) : "";
+        process.stdout.write(`  ${pc.green(result)}${timing}\n`);
       };
     } else {
-      // non-TTY: just print the start line immediately
       process.stdout.write(line + "\n");
       return (result: string, elapsedMs?: number) => {
-        const timing = elapsedMs !== undefined
-          ? ` (${(elapsedMs / 1000).toFixed(1)}s)`
-          : "";
+        const timing =
+          elapsedMs !== undefined ? ` (${formatDuration(elapsedMs)})` : "";
         process.stdout.write(`  -> ${result}${timing}\n`);
       };
     }
   },
 
   /**
-   * Print a result line without a step counter.
-   * Example: "  node (bun), python (uv)"
+   * Print a step completion (standalone, when not using the step() return fn).
+   */
+  stepDone(result: string, durationMs?: number): void {
+    if (!shouldEmit("info")) return;
+    const timing =
+      durationMs !== undefined ? pc.dim(` (${formatDuration(durationMs)})`) : "";
+    const line = `${" ".repeat(VERB_WIDTH + 1)}${pc.green(result)}${timing}`;
+    emit("info", line, `${result}${durationMs !== undefined ? ` (${formatDuration(durationMs)})` : ""}`);
+  },
+
+  /**
+   * Print an info message (unformatted, for general output).
+   */
+  info(msg: string): void {
+    emit("info", msg, msg);
+  },
+
+  /**
+   * Print a debug message (only in verbose mode).
+   */
+  debug(msg: string): void {
+    if (!shouldEmit("debug")) return;
+    const line = `${pc.dim(`[debug] ${msg}`)}`;
+    emit("debug", line, msg);
+  },
+
+  /**
+   * Print a result line (label + values).
+   * Example: "  Detected: node(bun), python(uv)"
    */
   result(label: string, values: string[]): void {
     if (!shouldEmit("info")) return;
     const joined = values.join(", ");
-    process.stdout.write(`  ${ansi.cyan}${label}:${ansi.reset} ${joined}\n`);
-  },
-
-  /**
-   * Print a success message.
-   */
-  success(msg: string): void {
-    if (!shouldEmit("info")) return;
-    process.stdout.write(`${ansi.green}${ansi.bold}ok${ansi.reset}  ${msg}\n`);
+    const line = `${formatVerb(label, pc.cyan)} ${joined}`;
+    emit("info", line, `${label}: ${joined}`);
   },
 
   /**
    * Print a failure message (goes to stderr).
    */
   fail(msg: string): void {
-    process.stderr.write(`${ansi.red}${ansi.bold}fail${ansi.reset} ${msg}\n`);
+    const line = `${formatVerb("FAIL", pc.red)} ${pc.red(msg)}`;
+    emit("error", line, `fail ${msg}`);
   },
 };
+
+// ============================================================================
+// Shared duration formatter (also exported for use elsewhere)
+// ============================================================================
+
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
+}
 
 export default logger;
