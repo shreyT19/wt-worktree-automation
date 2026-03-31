@@ -7,7 +7,9 @@
 
 import path from "node:path";
 import fs from "node:fs/promises";
+import pc from "picocolors";
 import { logger } from "../utils/logger.ts";
+import { box, formatDuration } from "../utils/ui.ts";
 import type { ParsedFlags } from "../index.ts";
 import {
   getRepoRoot,
@@ -90,10 +92,12 @@ export default async function setupCommand(
     const stat = await fs.stat(targetDir);
     if (!stat.isDirectory()) {
       logger.error(`Not a directory: ${targetDir}`);
+      logger.hint("Provide a valid directory path.");
       return 1;
     }
   } catch {
     logger.error(`Directory does not exist: ${targetDir}`);
+    logger.hint("Check the path and try again.");
     return 1;
   }
 
@@ -102,7 +106,8 @@ export default async function setupCommand(
     const done = await isSetupDone(targetDir);
     if (done) {
       const status = await readStatus(targetDir);
-      logger.info(`Already set up (${status?.overall ?? "ready"}) — use --force to re-run.`);
+      logger.verb("Skipping", `already set up (${status?.overall ?? "ready"})`);
+      logger.hint("Use --force to re-run.");
       return 0;
     }
   }
@@ -111,11 +116,12 @@ export default async function setupCommand(
   const repoRootRaw = await getRepoRoot(targetDir);
   if (!repoRootRaw) {
     logger.error(`Not inside a git repository: ${targetDir}`);
+    logger.hint("Run this command from inside a git repository.");
     return 1;
   }
   const repoRoot: string = repoRootRaw;
 
-  logger.info(`Setting up worktree: ${targetDir}`);
+  logger.verb("Setting up", targetDir);
 
   // --- Load config -------------------------------------------------------
   const globalConfig = await loadGlobalConfig();
@@ -124,25 +130,27 @@ export default async function setupCommand(
 
   // --- Optional clean ----------------------------------------------------
   if (clean) {
-    logger.info("Cleaning previous artifacts...");
+    logger.verb("Cleaning", "previous artifacts");
     await cleanArtifacts(targetDir);
   }
 
-  const totalSteps = (skipDeps ? 0 : 1) + (skipEnv ? 0 : 1) + 1; // detect + deps? + env?
-  let currentStep = 0;
+  const overallStart = Date.now();
 
   // --- Detect project types ----------------------------------------------
-  const detectDone = logger.step(++currentStep, totalSteps + 1, "Detecting project type");
-  const detectStart = Date.now();
+  logger.verb("Detecting", "project type");
   const ecosystems = await detectProjectTypes(targetDir);
   const ecoNames = ecosystems.map((e) => `${e.type}(${e.pm})`);
-  detectDone(ecoNames.length ? ecoNames.join(", ") : "none", Date.now() - detectStart);
+  if (ecoNames.length > 0) {
+    logger.detail(ecoNames.join(", "));
+  } else {
+    logger.detail("none");
+  }
 
   // --- Run pre_install hooks --------------------------------------------
   if (!skipHooks && config.hooks.pre_install.length > 0) {
-    logger.info("Running pre_install hooks...");
+    logger.verb("Running", "pre_install hooks");
     for (const cmd of config.hooks.pre_install) {
-      logger.debug(`  hook: ${cmd}`);
+      logger.debug(`hook: ${cmd}`);
       const proc = Bun.spawn(["sh", "-c", cmd], {
         cwd: targetDir,
         stdout: "inherit",
@@ -158,10 +166,10 @@ export default async function setupCommand(
   // --- Install deps ------------------------------------------------------
   const depsStatus: Partial<Record<EcosystemType, DepStatusEntry>> = {};
   let depsOverall: "ok" | "partial" | "fail" | "skip" = "skip";
+  let depsLabel = "skipped";
 
   if (!skipDeps && ecosystems.length > 0) {
-    const depsDone = logger.step(++currentStep, totalSteps + 1, "Installing dependencies");
-    const depsStart = Date.now();
+    logger.verb("Installing", "dependencies");
     const results = await installDeps(targetDir, ecosystems, config);
     const failed = results.filter((r) => !r.success && !r.skipped);
 
@@ -176,13 +184,14 @@ export default async function setupCommand(
 
     if (failed.length > 0) {
       depsOverall = failed.length === results.length ? "fail" : "partial";
-      depsDone(`partial (${failed.length}/${results.length} failed)`, Date.now() - depsStart);
+      depsLabel = `partial (${failed.length}/${results.length} failed)`;
+      logger.detail(depsLabel);
       for (const f of failed) {
-        logger.warn(`  ${f.ecosystem}: ${f.error ?? "install failed"}`);
+        logger.warn(`${f.ecosystem}: ${f.error ?? "install failed"}`);
       }
     } else {
       depsOverall = "ok";
-      depsDone("done", Date.now() - depsStart);
+      depsLabel = "done";
     }
   } else if (!skipDeps) {
     logger.warn("No ecosystems detected — skipping dependency install.");
@@ -191,9 +200,9 @@ export default async function setupCommand(
 
   // --- Run post_install hooks -------------------------------------------
   if (!skipHooks && config.hooks.post_install.length > 0) {
-    logger.info("Running post_install hooks...");
+    logger.verb("Running", "post_install hooks");
     for (const cmd of config.hooks.post_install) {
-      logger.debug(`  hook: ${cmd}`);
+      logger.debug(`hook: ${cmd}`);
       const proc = Bun.spawn(["sh", "-c", cmd], {
         cwd: targetDir,
         stdout: "inherit",
@@ -212,12 +221,12 @@ export default async function setupCommand(
     files: [],
     status: "skip",
   };
+  let envLabel = "skipped";
 
   if (!skipEnv) {
     const mainPath: string = (await getMainWorktreePath(repoRoot)) ?? repoRoot;
 
-    const envDone = logger.step(++currentStep, totalSteps + 1, "Setting up env files");
-    const envStart = Date.now();
+    logger.verb("Linking", "env files");
     const results = await setupEnvFiles(targetDir, mainPath, config);
     const failed = results.filter((r) => !r.success && !r.skipped);
     const processed = results.filter((r) => !r.skipped).map((r) => r.file);
@@ -231,20 +240,21 @@ export default async function setupCommand(
     };
 
     if (failed.length > 0) {
-      envDone(`partial (${failed.length} failed)`, Date.now() - envStart);
+      envLabel = `partial (${failed.length} failed)`;
+      logger.detail(envLabel);
       for (const f of failed) {
-        logger.warn(`  ${f.file}: ${f.error ?? "setup failed"}`);
+        logger.warn(`${f.file}: ${f.error ?? "setup failed"}`);
       }
     } else {
-      envDone(`${processed.length} files`, Date.now() - envStart);
+      envLabel = `${processed.length} file${processed.length !== 1 ? "s" : ""}`;
     }
   }
 
   // --- Run post_setup hooks --------------------------------------------
   if (!skipHooks && config.hooks.post_setup.length > 0) {
-    logger.info("Running post_setup hooks...");
+    logger.verb("Running", "post_setup hooks");
     for (const cmd of config.hooks.post_setup) {
-      logger.debug(`  hook: ${cmd}`);
+      logger.debug(`hook: ${cmd}`);
       const proc = Bun.spawn(["sh", "-c", cmd], {
         cwd: targetDir,
         stdout: "inherit",
@@ -279,12 +289,22 @@ export default async function setupCommand(
 
   await writeStatus(targetDir, statusPayload);
 
+  const elapsed = Date.now() - overallStart;
+
+  // --- Summary box -------------------------------------------------------
+  const summaryLines = [
+    `${pc.bold("Path")}     ${targetDir}`,
+    `${pc.bold("Deps")}     ${depsLabel}`,
+    `${pc.bold("Env")}      ${envLabel}`,
+    `${pc.bold("Time")}     ${formatDuration(elapsed)}`,
+  ];
+
   logger.blank();
   if (overall === "ready") {
-    logger.success(`Setup complete: ${targetDir}`);
+    logger.info(box(summaryLines.join("\n"), { title: "Setup complete" }));
   } else {
-    logger.warn(`Setup completed with warnings (overall: ${overall})`);
-    logger.info(`  To retry:  wt setup --force ${targetDir}`);
+    logger.info(box(summaryLines.join("\n"), { title: "Setup partial" }));
+    logger.hint(`To retry: wt setup --force ${targetDir}`);
   }
 
   return overall === "ready" ? 0 : 2;

@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 
+import pc from "picocolors";
 import { logger, configureLogger } from "./utils/logger.ts";
 import addCommand from "./commands/add.ts";
 import setupCommand from "./commands/setup.ts";
@@ -13,28 +14,33 @@ import shellInitCommand from "./commands/shell-init.ts";
 const VERSION = "0.1.0";
 
 const HELP = `
-wt — worktree automation
+${pc.bold("wt")} — worktree automation
 
-USAGE:
+${pc.bold("USAGE")}
     wt <command> [options] [arguments]
 
-COMMANDS:
-    add <branch>        Create a worktree and run full setup
-    setup [path]        Run setup on an existing worktree
-    list                List all worktrees with setup status
-    remove <branch>     Remove a worktree cleanly
-    cd <branch>         Print worktree path (for use with cd)
-    init                Generate .worktreerc for this repo
-    doctor [path]       Diagnose worktree setup issues
-    shell-init [shell]  Print shell integration (eval in .zshrc/.bashrc)
+${pc.bold("COMMANDS")}
+    ${pc.cyan("add")} <branch>        ${pc.dim("Create a worktree and run full setup")}
+    ${pc.cyan("setup")} [path]        ${pc.dim("Run setup on an existing worktree")}
+    ${pc.cyan("list")}                ${pc.dim("List all worktrees with setup status")}
+    ${pc.cyan("remove")} <branch>     ${pc.dim("Remove a worktree cleanly")}
+    ${pc.cyan("cd")} <branch>         ${pc.dim("Print worktree path (for use with cd)")}
+    ${pc.cyan("init")}                ${pc.dim("Generate .worktreerc for this repo")}
+    ${pc.cyan("doctor")} [path]       ${pc.dim("Diagnose worktree setup issues")}
+    ${pc.cyan("shell-init")} [shell]  ${pc.dim("Print shell integration (eval in .zshrc/.bashrc)")}
 
-GLOBAL OPTIONS:
-    --help, -h          Show this help message
-    --version, -v       Show version
-    --quiet, -q         Only show errors
-    --verbose           Show debug output
+${pc.bold("GLOBAL OPTIONS")}
+    ${pc.dim("--help, -h")}          Show this help message
+    ${pc.dim("--version, -v")}       Show version
+    ${pc.dim("--quiet, -q")}         Only show errors
+    ${pc.dim("--verbose")}           Show debug output
 
-Run 'wt <command> --help' for command-specific help.
+${pc.bold("Get started")}
+    ${pc.dim("$")} wt init                  ${pc.dim("Generate a .worktreerc config")}
+    ${pc.dim("$")} wt add feat-billing      ${pc.dim("Create a worktree + install deps")}
+    ${pc.dim("$")} wt list                  ${pc.dim("See all worktrees at a glance")}
+
+Run ${pc.cyan("wt <command> --help")} for command-specific help.
 `.trim();
 
 export interface ParsedFlags {
@@ -209,7 +215,8 @@ async function main(): Promise<number> {
       case "shell-init":
         return await shellInitCommand(args);
       default:
-        logger.error(`Unknown command: '${resolvedCommand}'. Run 'wt --help' for usage.`);
+        logger.error(`Unknown command: '${resolvedCommand}'`);
+        logger.hint("Run 'wt --help' for usage.");
         return 1;
     }
   } catch (err: unknown) {
@@ -218,6 +225,7 @@ async function main(): Promise<number> {
     if (flags.verbose && err instanceof Error && err.stack) {
       logger.debug(err.stack);
     }
+    logger.hint("Run with --verbose for more details.");
     return 1;
   }
 }

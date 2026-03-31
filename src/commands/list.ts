@@ -4,7 +4,9 @@
  * Lists all git worktrees with their setup status from .wt-status.json.
  */
 
+import pc from "picocolors";
 import { logger } from "../utils/logger.ts";
+import { table } from "../utils/ui.ts";
 import type { ParsedFlags } from "../index.ts";
 import { listWorktrees } from "../core/git.ts";
 import { readStatus } from "../core/status.ts";
@@ -29,38 +31,40 @@ EXAMPLES:
 // Formatting helpers
 // ---------------------------------------------------------------------------
 
-function truncate(str: string, maxLen: number): string {
-  if (str.length <= maxLen) return str.padEnd(maxLen);
-  return str.slice(0, maxLen - 1) + "…";
-}
-
 function statusBadge(s: SetupOverallStatus | null): string {
   switch (s) {
-    case "ready":   return "ready";
-    case "partial": return "partial";
-    case "failed":  return "failed";
-    case "pending": return "pending";
-    default:        return "-";
+    case "ready":   return pc.green("ready");
+    case "partial": return pc.yellow("partial");
+    case "failed":  return pc.red("failed");
+    case "pending": return pc.yellow("pending");
+    default:        return pc.dim("-");
   }
 }
 
 function depsCell(status: WtStatus | null, isBare: boolean): string {
-  if (isBare) return "-";
-  if (!status) return "?";
+  if (isBare) return pc.dim("-");
+  if (!status) return pc.dim("?");
   const entries = Object.values(status.deps);
-  if (entries.length === 0) return "skip";
+  if (entries.length === 0) return pc.dim("skip");
   const failed = entries.filter((e) => e.status === "fail");
-  if (failed.length === entries.length) return "fail";
-  if (failed.length > 0) return "partial";
+  if (failed.length === entries.length) return pc.red("fail");
+  if (failed.length > 0) return pc.yellow("partial");
   const allSkip = entries.every((e) => e.status === "skip");
-  if (allSkip) return "skip";
-  return "ok";
+  if (allSkip) return pc.dim("skip");
+  return pc.green("ok");
 }
 
 function envCell(status: WtStatus | null, isBare: boolean): string {
-  if (isBare) return "-";
-  if (!status) return "?";
-  return status.env.status ?? "-";
+  if (isBare) return pc.dim("-");
+  if (!status) return pc.dim("?");
+  const raw = status.env.status ?? "-";
+  switch (raw) {
+    case "ok":      return pc.green("ok");
+    case "partial": return pc.yellow("partial");
+    case "fail":    return pc.red("fail");
+    case "skip":    return pc.dim("skip");
+    default:        return pc.dim(raw);
+  }
 }
 
 interface RowData {
@@ -92,7 +96,8 @@ export default async function listCommand(
   const worktrees = await listWorktrees(process.cwd());
 
   if (worktrees.length === 0) {
-    logger.info("No worktrees found.");
+    logger.verb("List", "no worktrees found");
+    logger.hint("Create one with: wt add <branch>");
     return 0;
   }
 
@@ -106,7 +111,7 @@ export default async function listCommand(
         path: wt.path,
         deps: depsCell(status, wt.isBare),
         env: envCell(status, wt.isBare),
-        status: wt.isBare ? "(bare)" : statusBadge(status?.overall ?? null),
+        status: wt.isBare ? pc.dim("(bare)") : statusBadge(status?.overall ?? null),
         isCurrent: wt.path === process.cwd(),
         raw: status,
       };
@@ -127,54 +132,34 @@ export default async function listCommand(
     return 0;
   }
 
-  // --- Table output -------------------------------------------------------
-  const BRANCH_W = 30;
-  const PATH_W = 36;
-  const CELL_W = 8;
+  // --- Table output using box-drawing table ------------------------------
+  const tableHeaders = ["", "Branch", "Path", "Deps", "Env", "Status"];
+  const tableRows = rows.map((row) => {
+    const marker = row.isCurrent ? pc.cyan("\u2192") : " ";
+    const branchCell = row.isCurrent ? pc.cyan(row.branch) : row.branch;
+    return [marker, branchCell, row.path, row.deps, row.env, row.status];
+  });
 
-  const header =
-    "  " +
-    truncate("BRANCH", BRANCH_W) +
-    "  " +
-    truncate("PATH", PATH_W) +
-    "  " +
-    "DEPS    " +
-    "ENV     " +
-    "STATUS";
+  logger.info(table(tableHeaders, tableRows));
 
-  const divider = "  " + "-".repeat(BRANCH_W + PATH_W + CELL_W * 2 + 20);
-
-  logger.info(header);
-  logger.info(divider);
-
-  for (const row of rows) {
-    const prefix = row.isCurrent ? "> " : "  ";
-    const line =
-      prefix +
-      truncate(row.branch, BRANCH_W) +
-      "  " +
-      truncate(row.path, PATH_W) +
-      "  " +
-      row.deps.padEnd(CELL_W) +
-      row.env.padEnd(CELL_W) +
-      row.status;
-
-    logger.info(line);
-
-    if (showDetail && row.raw) {
+  if (showDetail) {
+    for (const row of rows) {
+      if (!row.raw) continue;
       const s = row.raw;
+      logger.blank();
+      logger.verb("Detail", pc.cyan(row.branch));
       const ecos = s.ecosystems.join(", ") || "none";
-      logger.info(`     ecosystems: ${ecos}`);
+      logger.detail(`ecosystems: ${ecos}`);
       for (const [eco, dep] of Object.entries(s.deps)) {
-        logger.info(`     ${eco}: ${dep.pm} — ${dep.status}${dep.error ? ` (${dep.error})` : ""}`);
+        logger.detail(`${eco}: ${dep.pm} \u2014 ${dep.status}${dep.error ? ` (${dep.error})` : ""}`);
       }
-      logger.info(`     env strategy: ${s.env.strategy}, files: ${s.env.files.length}`);
-      logger.info(`     set up: ${s.setupAt}`);
+      logger.detail(`env strategy: ${s.env.strategy}, files: ${s.env.files.length}`);
+      logger.detail(`set up: ${s.setupAt}`);
     }
   }
 
-  logger.info("");
-  logger.info(`${worktrees.length} worktree${worktrees.length !== 1 ? "s" : ""}`);
+  logger.blank();
+  logger.info(pc.dim(`${worktrees.length} worktree${worktrees.length !== 1 ? "s" : ""}`));
 
   return 0;
 }

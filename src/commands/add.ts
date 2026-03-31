@@ -6,7 +6,9 @@
  */
 
 import path from "node:path";
+import pc from "picocolors";
 import { logger } from "../utils/logger.ts";
+import { box, formatDuration } from "../utils/ui.ts";
 import type { ParsedFlags } from "../index.ts";
 import type { MergedConfig } from "../core/types.ts";
 import {
@@ -116,8 +118,8 @@ export default async function addCommand(
   const branch = args[0];
   if (!branch) {
     logger.error("Missing required argument: <branch>");
-    logger.info("Usage: wt add <branch> [options]");
-    logger.info("Run 'wt add --help' for full usage.");
+    logger.hint("Usage: wt add <branch> [options]");
+    logger.hint("Run 'wt add --help' for full usage.");
     return 1;
   }
 
@@ -135,6 +137,7 @@ export default async function addCommand(
   const repoRootRaw = await getRepoRoot(process.cwd());
   if (!repoRootRaw) {
     logger.error("Not inside a git repository.");
+    logger.hint("Run this command from inside a git repository.");
     return 1;
   }
   const repoRoot: string = repoRootRaw;
@@ -147,29 +150,23 @@ export default async function addCommand(
   const fullBranch = applyBranchPrefix(branch, config.user.branch_prefix);
   const worktreePath = resolveWorktreePath(fullBranch, config, customPath, repoRoot);
 
-  logger.info(`Creating worktree for branch '${fullBranch}'`);
-  logger.info(`  path: ${worktreePath}`);
-  if (fromBase) logger.info(`  from: ${fromBase}`);
+  logger.verb("Creating", `worktree for branch ${pc.cyan(fullBranch)}`);
+  logger.detail(`path: ${worktreePath}`);
+  if (fromBase) logger.detail(`from: ${fromBase}`);
 
   if (isDryRun) {
-    logger.info("");
-    logger.info("Dry run — no changes made.");
-    logger.info(`Would run: git worktree add ${worktreePath} ${useExisting ? fullBranch : `-b ${fullBranch} ${fromBase ?? "HEAD"}`}`);
+    logger.blank();
+    logger.verb("Dry run", "no changes made", pc.yellow);
+    logger.detail(`Would run: git worktree add ${worktreePath} ${useExisting ? fullBranch : `-b ${fullBranch} ${fromBase ?? "HEAD"}`}`);
     return 0;
   }
 
   // --- Create the worktree -----------------------------------------------
-  // Steps: (1) create worktree, (2) detect project type,
-  //        (3) copy deps or install deps, (4) setup env files.
-  // When --copy-from is used there may be both a copy step and a fallback
-  // install step, so allocate an extra slot in that case.
-  const totalSteps = copyFrom ? 5 : 4;
-  let step = 0;
+  const overallStart = Date.now();
 
   // Step 1: git worktree add
   {
-    const done = logger.step(++step, totalSteps, "Creating worktree");
-    const start = Date.now();
+    logger.verb("Creating", `worktree at ${pc.dim(worktreePath)}`);
     try {
       const addResult = await addWorktree(
         worktreePath,
@@ -182,25 +179,27 @@ export default async function addCommand(
       if (!addResult.success) {
         throw new Error(addResult.error ?? "git worktree add failed");
       }
-      done("done", Date.now() - start);
     } catch (err: unknown) {
-      done("failed", Date.now() - start);
       const message = err instanceof Error ? err.message : String(err);
       logger.error(`Failed to create worktree: ${message}`);
-      logger.info(`To retry setup later:  wt setup ${worktreePath}`);
-      logger.info(`To remove the worktree: wt remove ${fullBranch}`);
+      logger.hint(`To retry setup later:  wt setup ${worktreePath}`);
+      logger.hint(`To remove the worktree: wt remove ${fullBranch}`);
       return 1;
     }
   }
 
   // Step 2: Detect project types
-  const detectDone = logger.step(++step, totalSteps, "Detecting project type");
-  const detectStart = Date.now();
+  logger.verb("Detecting", "project type");
   const ecosystems = await detectProjectTypes(worktreePath);
   const ecoNames = ecosystems.map((e) => `${e.type}(${e.pm})`);
-  detectDone(ecoNames.length ? ecoNames.join(", ") : "none detected", Date.now() - detectStart);
+  if (ecoNames.length > 0) {
+    logger.detail(ecoNames.join(", "));
+  } else {
+    logger.detail("none detected");
+  }
 
   // Step 3: Install deps (or copy from another worktree)
+  let depsLabel = "skipped";
   if (!skipDeps && ecosystems.length > 0) {
     let didCopy = false;
 
@@ -217,8 +216,7 @@ export default async function addCommand(
       if (!sourceWorktree) {
         logger.warn(`--copy-from: no worktree found for '${copyFrom}' — falling back to normal install`);
       } else {
-        const copyDone = logger.step(++step, totalSteps, `Copying deps from '${copyFrom}'`);
-        const copyStart = Date.now();
+        logger.verb("Copying", `deps from ${pc.cyan(copyFrom)}`);
         const copyResults = await copyIgnoredDirs(sourceWorktree.path, worktreePath, ecosystems);
 
         const copied = copyResults.filter((r) => r.success);
@@ -226,61 +224,62 @@ export default async function addCommand(
         const failed = copyResults.filter((r) => !r.success && !r.skipped);
 
         if (copied.length > 0) {
-          const summary = copied.map((r) => `${r.dir} (${r.duration}ms)`).join(", ");
-          copyDone(summary, Date.now() - copyStart);
+          depsLabel = copied.map((r) => `${r.dir} (${r.duration}ms)`).join(", ");
+          logger.detail(depsLabel);
           // Only skip normal install when node_modules was copied successfully
           const nodeModulesCopied = copied.some((r) => r.dir === "node_modules");
           if (nodeModulesCopied) didCopy = true;
         } else if (skipped.length > 0) {
-          copyDone(`skipped — ${skipped[0]!.skipped}`, Date.now() - copyStart);
+          logger.detail(`skipped — ${skipped[0]!.skipped}`);
         } else {
-          copyDone("failed", Date.now() - copyStart);
           for (const f of failed) {
-            logger.warn(`  ${f.dir}: copy failed`);
+            logger.warn(`${f.dir}: copy failed`);
           }
         }
       }
     }
 
     if (!didCopy) {
-      const depsDone = logger.step(++step, totalSteps, "Installing dependencies");
-      const depsStart = Date.now();
+      logger.verb("Installing", "dependencies");
       const results = await installDeps(worktreePath, ecosystems, config);
       const failed = results.filter((r) => !r.success && !r.skipped);
       if (failed.length > 0) {
-        depsDone(`partial (${failed.length} failed)`, Date.now() - depsStart);
+        depsLabel = `partial (${failed.length} failed)`;
+        logger.detail(depsLabel);
         for (const f of failed) {
-          logger.warn(`  ${f.ecosystem}: ${f.error ?? "install failed"}`);
+          logger.warn(`${f.ecosystem}: ${f.error ?? "install failed"}`);
         }
       } else {
-        depsDone("done", Date.now() - depsStart);
+        depsLabel = "done";
       }
     }
   } else {
     if (ecosystems.length === 0) {
       logger.warn("No ecosystems detected — skipping dependency install.");
     }
-    logger.step(++step, totalSteps, "Installing dependencies")("skipped");
+    logger.verb("Installing", "dependencies " + pc.dim("(skipped)"), pc.dim);
   }
 
   // Step 4: Setup env files
+  let envLabel = "skipped";
   if (!skipEnv) {
     const mainPathRaw = await getMainWorktreePath(repoRoot);
     const mainPath = mainPathRaw ?? repoRoot;
-    const envDone = logger.step(++step, totalSteps, "Setting up env files");
-    const envStart = Date.now();
+    logger.verb("Linking", "env files");
     const results = await setupEnvFiles(worktreePath, mainPath, config);
     const failed = results.filter((r) => !r.success && !r.skipped);
+    const processed = results.filter((r) => !r.skipped).length;
     if (failed.length > 0) {
-      envDone(`partial (${failed.length} failed)`, Date.now() - envStart);
+      envLabel = `partial (${failed.length} failed)`;
+      logger.detail(envLabel);
       for (const f of failed) {
-        logger.warn(`  ${f.file}: ${f.error ?? "setup failed"}`);
+        logger.warn(`${f.file}: ${f.error ?? "setup failed"}`);
       }
     } else {
-      envDone(`${results.filter((r) => !r.skipped).length} files`, Date.now() - envStart);
+      envLabel = `${processed} file${processed !== 1 ? "s" : ""}`;
     }
   } else {
-    logger.step(++step, totalSteps, "Setting up env files")("skipped");
+    logger.verb("Linking", "env files " + pc.dim("(skipped)"), pc.dim);
   }
 
   // --- Write status file ------------------------------------------------
@@ -294,15 +293,25 @@ export default async function addCommand(
     overall: "ready",
   });
 
+  const elapsed = Date.now() - overallStart;
+
+  // --- Summary box -------------------------------------------------------
+  const summaryLines = [
+    `${pc.bold("Branch")}   ${pc.cyan(fullBranch)}`,
+    `${pc.bold("Path")}     ${worktreePath}`,
+    `${pc.bold("Deps")}     ${depsLabel}`,
+    `${pc.bold("Env")}      ${envLabel}`,
+    `${pc.bold("Time")}     ${formatDuration(elapsed)}`,
+  ];
   logger.blank();
-  logger.success(`Worktree ready at: ${worktreePath}`);
-  logger.info(`  Branch: ${fullBranch}`);
-  logger.info(`  cd into it:  cd "${worktreePath}"`);
+  logger.info(box(summaryLines.join("\n"), { title: "Worktree ready" }));
+  logger.blank();
+  logger.hint(`cd "${worktreePath}"`);
 
   // --- Run --exec command in the new worktree ----------------------------
   if (execCmd) {
     logger.blank();
-    logger.info(`Running: ${execCmd}`);
+    logger.verb("Running", execCmd);
 
     // Route through sh -c to support shell operators; simple commands work fine too.
     const argv = ["sh", "-c", execCmd];
