@@ -10,7 +10,9 @@
 
 import path from "node:path";
 import fs from "node:fs/promises";
+import pc from "picocolors";
 import { logger } from "../utils/logger.ts";
+import { box } from "../utils/ui.ts";
 import type { ParsedFlags } from "../index.ts";
 import { getRepoRoot } from "../core/git.ts";
 import { detectProjectTypes } from "../core/detector.ts";
@@ -219,6 +221,7 @@ export default async function initCommand(
   const repoRoot = await getRepoRoot(cwd);
   if (!repoRoot) {
     logger.error("Not inside a git repository.");
+    logger.hint("Run this command from inside a git repository.");
     return 1;
   }
 
@@ -232,7 +235,7 @@ export default async function initCommand(
       logger.warn(`.worktreerc already exists at ${rcPath}`);
       const answer = await prompt("Overwrite? [y/N] ");
       if (answer.toLowerCase() !== "y" && answer.toLowerCase() !== "yes") {
-        logger.info("Aborted.");
+        logger.verb("Aborted", "no changes made");
         return 0;
       }
     } else {
@@ -243,20 +246,21 @@ export default async function initCommand(
   }
 
   // --- Detect ecosystems ------------------------------------------------
-  logger.info("Scanning project...");
+  logger.verb("Scanning", "project ecosystems");
   const ecosystems = await detectProjectTypes(repoRoot);
   if (ecosystems.length > 0) {
     logger.result("Detected", ecosystems.map((e) => `${e.type}(${e.pm})`));
   } else {
-    logger.info("  No ecosystems detected.");
+    logger.detail("no ecosystems detected");
   }
 
   // --- Scan for .env files ---------------------------------------------
+  logger.verb("Scanning", ".env files");
   const envFiles = await findEnvFiles(repoRoot);
   if (envFiles.length > 0) {
-    logger.result(".env files", envFiles);
+    logger.result("Found", envFiles);
   } else {
-    logger.info("  No .env files found.");
+    logger.detail("no .env files found");
   }
 
   // --- Build content ---------------------------------------------------
@@ -265,18 +269,12 @@ export default async function initCommand(
   // --- Preview and confirm --------------------------------------------
   if (!useDefaults) {
     logger.blank();
-    logger.info(`Will write to: ${rcPath}`);
-    logger.info("Content preview:");
-    logger.info("---");
-    for (const line of content.split("\n")) {
-      logger.info(line);
-    }
-    logger.info("---");
+    logger.info(box(content, { title: ".worktreerc preview" }));
     logger.blank();
 
     const answer = await prompt("Write this .worktreerc? [Y/n] ");
     if (answer.toLowerCase() === "n" || answer.toLowerCase() === "no") {
-      logger.info("Aborted.");
+      logger.verb("Aborted", "no changes made");
       return 0;
     }
   }
@@ -284,11 +282,11 @@ export default async function initCommand(
   // --- Write the file --------------------------------------------------
   await Bun.write(rcPath, content);
   logger.success(`Created ${rcPath}`);
-  logger.info("");
-  logger.info("Next steps:");
-  logger.info("  1. Review and customize .worktreerc");
-  logger.info("  2. Commit it:  git add .worktreerc && git commit -m 'chore: add worktreerc'");
-  logger.info("  3. Add .wt-status.json to .gitignore");
+  logger.blank();
+  logger.hint("Next steps:");
+  logger.detail("1. Review and customize .worktreerc");
+  logger.detail("2. Commit it: git add .worktreerc && git commit -m 'chore: add worktreerc'");
+  logger.detail("3. Add .wt-status.json to .gitignore");
 
   return 0;
 }

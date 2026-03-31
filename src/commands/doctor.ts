@@ -6,6 +6,7 @@
 
 import path from "node:path";
 import fs from "node:fs/promises";
+import pc from "picocolors";
 import { logger } from "../utils/logger.ts";
 import type { ParsedFlags } from "../index.ts";
 import { getRepoRoot, getMainWorktreePath, listWorktrees } from "../core/git.ts";
@@ -260,21 +261,21 @@ async function checkGitignoreCoversEnv(repoRoot: string): Promise<CheckResult> {
 // Output formatting
 // ---------------------------------------------------------------------------
 
-function formatCheck(check: CheckResult, isTTY: boolean): string {
+function formatCheck(check: CheckResult): string {
   const icons: Record<CheckStatus, string> = {
-    pass: isTTY ? "\x1b[32m ok \x1b[0m" : " ok ",
-    fail: isTTY ? "\x1b[31mfail\x1b[0m" : "fail",
-    warn: isTTY ? "\x1b[33mwarn\x1b[0m" : "warn",
-    skip: isTTY ? "\x1b[90mskip\x1b[0m" : "skip",
+    pass: pc.green("\u2713"),
+    fail: pc.red("\u2717"),
+    warn: pc.yellow("\u26A0"),
+    skip: pc.dim("-"),
   };
 
   const icon = icons[check.status];
-  let line = `  [${icon}]  ${check.label}`;
+  let line = `  ${icon} ${check.label}`;
   if (check.detail) {
-    line += `\n           ${isTTY ? "\x1b[90m" : ""}${check.detail}${isTTY ? "\x1b[0m" : ""}`;
+    line += `\n    ${pc.dim(check.detail)}`;
   }
   if (check.fix) {
-    line += `\n           ${isTTY ? "\x1b[33m" : ""}fix: ${check.fix}${isTTY ? "\x1b[0m" : ""}`;
+    line += `\n    ${pc.dim("\u2192 " + check.fix)}`;
   }
   return line;
 }
@@ -296,13 +297,14 @@ export default async function doctorCommand(
     ? path.resolve(args[0].replace(/^~/, process.env.HOME ?? "~"))
     : process.cwd();
 
-  logger.info(`Running diagnostics on: ${targetDir}`);
+  logger.verb("Diagnosing", targetDir);
   logger.blank();
 
   // --- Resolve repo root -----------------------------------------------
   const repoRoot = await getRepoRoot(targetDir);
   if (!repoRoot) {
     logger.error("Not inside a git repository.");
+    logger.hint("Run this command from inside a git repository.");
     return 1;
   }
 
@@ -353,23 +355,22 @@ export default async function doctorCommand(
   checks.push(...depChecks);
 
   // --- Print results ----------------------------------------------------
-  const isTTY = process.stdout.isTTY === true;
   for (const check of checks) {
-    logger.info(formatCheck(check, isTTY));
+    logger.info(formatCheck(check));
   }
 
+  const passed = checks.filter((c) => c.status === "pass").length;
   const failed = checks.filter((c) => c.status === "fail");
   const warned = checks.filter((c) => c.status === "warn");
 
   logger.blank();
-  logger.info(
-    `${checks.length} checks: ${checks.filter((c) => c.status === "pass").length} passed, ` +
-    `${warned.length} warnings, ${failed.length} failures`,
-  );
+  const summary = `${pc.bold(String(checks.length))} checks: ${pc.green(String(passed) + " passed")}, ${pc.yellow(String(warned.length) + " warnings")}, ${pc.red(String(failed.length) + " failures")}`;
+  logger.info(summary);
 
   if (failed.length > 0) {
     logger.blank();
-    logger.error(`${failed.length} check(s) failed. See 'fix:' hints above.`);
+    logger.error(`${failed.length} check(s) failed.`);
+    logger.hint("See the hints above to fix failing checks.");
     return 1;
   }
 

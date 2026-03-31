@@ -6,6 +6,7 @@
  */
 
 import path from "node:path";
+import pc from "picocolors";
 import { logger } from "../utils/logger.ts";
 import type { ParsedFlags } from "../index.ts";
 import {
@@ -65,7 +66,7 @@ function findWorktreeByBranch(
   if (partial.length > 1) {
     logger.error(`Ambiguous branch name '${query}'. Matching worktrees:`);
     for (const wt of partial) {
-      logger.info(`  ${wt.branch}  (${wt.path})`);
+      logger.detail(`${wt.branch}  (${wt.path})`);
     }
     return null;
   }
@@ -97,7 +98,7 @@ export default async function removeCommand(
   const query = args[0];
   if (!query) {
     logger.error("Missing required argument: <branch>");
-    logger.info("Usage: wt remove <branch>");
+    logger.hint("Usage: wt remove <branch>");
     return 1;
   }
 
@@ -108,6 +109,7 @@ export default async function removeCommand(
   const repoRootRaw = await getRepoRoot(process.cwd());
   if (!repoRootRaw) {
     logger.error("Not inside a git repository.");
+    logger.hint("Run this command from inside a git repository.");
     return 1;
   }
   const repoRoot: string = repoRootRaw;
@@ -118,26 +120,25 @@ export default async function removeCommand(
   const target = findWorktreeByBranch(worktrees, query);
   if (!target) {
     logger.error(`No worktree found matching: '${query}'`);
-    logger.info("Available worktrees:");
+    logger.hint("Available worktrees:");
     for (const wt of worktrees) {
-      logger.info(`  ${wt.branch ?? "(detached)"}  ->  ${wt.path}`);
+      logger.detail(`${wt.branch ?? "(detached)"}  ->  ${wt.path}`);
     }
     return 1;
   }
 
   if (target.isMain) {
     logger.error("Cannot remove the main worktree.");
+    logger.hint("The main worktree is managed by git directly.");
     return 1;
   }
 
-  logger.info(`Removing worktree: ${target.path}`);
-  logger.info(`  branch: ${target.branch ?? "(detached)"}`);
-
   // --- Check for uncommitted changes -----------------------------------
+  logger.verb("Checking", "clean working tree");
   const dirty = await hasUncommittedChanges(target.path);
   if (dirty && !force) {
     logger.error(`Worktree has uncommitted changes: ${target.path}`);
-    logger.info("Commit, stash, or use --force to remove anyway.");
+    logger.hint("Commit, stash, or use --force to remove anyway.");
     return 1;
   }
 
@@ -156,29 +157,24 @@ export default async function removeCommand(
   logger.debug("No cleanup hooks configured.");
 
   // --- git worktree remove ---------------------------------------------
-  const totalSteps = keepBranch ? 1 : 2;
   {
-    const done = logger.step(1, totalSteps, "Removing worktree");
-    const start = Date.now();
+    logger.verb("Removing", `worktree at ${pc.dim(target.path)}`);
     try {
       const removeResult = await removeWorktree(target.path, force, repoRoot);
       if (!removeResult.success) {
         throw new Error(removeResult.error ?? "git worktree remove failed");
       }
-      done("done", Date.now() - start);
     } catch (err: unknown) {
-      done("failed", Date.now() - start);
       const message = err instanceof Error ? err.message : String(err);
       logger.error(`Failed to remove worktree: ${message}`);
-      logger.info(`To force removal: wt remove ${query} --force`);
+      logger.hint(`To force removal: wt remove ${query} --force`);
       return 1;
     }
   }
 
   // --- Delete the branch -----------------------------------------------
   if (!keepBranch && target.branch) {
-    const done = logger.step(2, totalSteps, `Deleting branch '${target.branch}'`);
-    const start = Date.now();
+    logger.verb("Deleting", `branch ${pc.cyan(target.branch)}`);
     // Use -D only when the caller explicitly passed --force; otherwise use -d
     // so that branches with unmerged changes are not silently discarded.
     const deleteFlag = force ? "-D" : "-d";
@@ -187,19 +183,16 @@ export default async function removeCommand(
     });
 
     if (result.exitCode !== 0) {
-      done("failed", Date.now() - start);
       logger.warn(`Could not delete branch '${target.branch}': ${result.stderr.trim()}`);
       if (!force) {
-        logger.info(`The branch has unmerged changes. Use 'wt remove ${query} --force' to force-delete it.`);
+        logger.hint(`The branch has unmerged changes. Use 'wt remove ${query} --force' to force-delete it.`);
       } else {
-        logger.info(`To delete manually: git branch -D ${target.branch}`);
+        logger.hint(`To delete manually: git branch -D ${target.branch}`);
       }
       return 2; // partial success
     }
-    done("done", Date.now() - start);
   }
 
-  logger.blank();
-  logger.success(`Removed worktree for branch '${target.branch ?? "(detached)"}'`);
+  logger.success(`Worktree removed`);
   return 0;
 }
