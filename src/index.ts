@@ -171,7 +171,7 @@ async function main(): Promise<number> {
   });
 
   if (flags.version) {
-    process.stdout.write(`wt v${VERSION}\n`);
+    process.stdout.write(`${VERSION}\n`);
     return 0;
   }
 
